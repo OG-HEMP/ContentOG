@@ -1,0 +1,24 @@
+# ContentOG Operational Settings
+
+crawler:
+  limit_per_domain: 50
+  max_depth: 2
+  timeout: 30
+
+serp:
+  results_per_keyword: 10
+  region: "us"
+  language: "en"
+
+embeddings:
+  model_name: "text-embedding-3-small"
+  dimensions: 1536
+
+clustering:
+  min_cluster_size: 5
+  metric: "cosine"
+
+scheduling:
+  industry_crawl_interval: "monthly"
+  competitor_crawl_interval: "weekly"
+  site_crawl_interval: "weekly"
