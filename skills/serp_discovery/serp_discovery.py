@@ -1,71 +1,34 @@
 import logging
-import os
 from urllib.parse import urlencode, urlparse
 
-try:
-    import yaml
-except Exception:  # pragma: no cover
-    yaml = None
-
-try:
-    from dotenv import load_dotenv
-except Exception:  # pragma: no cover
-    def load_dotenv(*args, **kwargs):
-        return False
-
-load_dotenv()
-
+from config.config import settings
 from skills.http_utils import request_json
 
 logger = logging.getLogger(__name__)
 _SERPAPI_URL = "https://serpapi.com/search.json"
 
 
-def _settings() -> dict:
-    if yaml is None:
-        return {}
-    try:
-        with open("config/settings.yaml", "r", encoding="utf-8") as handle:
-            return yaml.safe_load(handle) or {}
-    except Exception:
-        return {}
-
-
-def _serp_api_key() -> str:
-    key = (os.getenv("SERP_API_KEY") or os.getenv("SERPAPI_KEY") or "").strip()
-    if not key:
-        raise RuntimeError("SERP_API_KEY is required for SERP discovery.")
-    return key
-
-
 def discover_serp_urls(keyword: str) -> list:
-    """Discover live SERP URLs using SerpApi."""
-    settings = _settings()
-    serp_settings = settings.get("serp", {}) if isinstance(settings, dict) else {}
-    num_results = int(serp_settings.get("results_per_keyword", 10))
-    language = str(serp_settings.get("language", "en"))
-    region = str(serp_settings.get("region", "us"))
-    timeout = int(serp_settings.get("timeout", 30))
-    retries = int(serp_settings.get("retry_attempts", 3))
-    backoff_seconds = float(serp_settings.get("backoff_seconds", 1.0))
-
+    """Discover live SERP URLs using SerpApi with centralized settings."""
+    
     query = urlencode(
         {
             "engine": "google",
             "q": keyword,
-            "hl": language,
-            "gl": region,
-            "num": num_results,
-            "api_key": _serp_api_key(),
+            "hl": settings.serp_language,
+            "gl": settings.serp_region,
+            "num": settings.serp_results_per_keyword,
+            "api_key": settings.serp_api_key,
         }
     )
+    
     try:
         payload = request_json(
             f"{_SERPAPI_URL}?{query}",
             headers={"User-Agent": "ContentOG/1.0"},
-            timeout=timeout,
-            retries=retries,
-            backoff_seconds=backoff_seconds,
+            timeout=settings.serp_timeout,
+            retries=settings.serp_retry_attempts,
+            backoff_seconds=settings.serp_backoff_seconds,
         )
     except Exception as exc:
         raise RuntimeError(f"SerpApi request failed: {exc}") from exc

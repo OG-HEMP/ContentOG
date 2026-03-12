@@ -1,0 +1,19 @@
+steps:
+  # 1. Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA', '.']
+
+  # 2. Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA']
+
+images:
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA'
+
+substitutions:
+  _AR_HOSTNAME: 'us-central1-docker.pkg.dev'
+  _AR_REPO_NAME: 'contentog'
+  _SERVICE_NAME: 'worker'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

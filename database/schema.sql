@@ -1,5 +1,5 @@
 -- ContentOG Database Schema
--- Based on requirements.md and antigravity_bootstrap.md
+-- Ground Truth aligned with Supabase production schema
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -23,17 +23,10 @@ CREATE TABLE IF NOT EXISTS articles (
     serp_rank INTEGER,
     publish_date TIMESTAMP WITH TIME ZONE,
     word_count INTEGER,
-    embedding vector(1536), -- Defaulting to 1536 for OpenAI embeddings, can be adjusted
+    embedding vector(1536),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- Safe migration path for existing databases
-ALTER TABLE IF EXISTS articles
-    ADD COLUMN IF NOT EXISTS serp_keyword TEXT;
-
-ALTER TABLE IF EXISTS articles
-    ADD COLUMN IF NOT EXISTS serp_rank INTEGER;
 
 -- PAA Questions Table
 CREATE TABLE IF NOT EXISTS paa_questions (
@@ -77,145 +70,57 @@ CREATE TABLE IF NOT EXISTS cluster_articles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Topic relationships (knowledge graph edges)
+-- Topic Relationships (Similarity Graph)
 CREATE TABLE IF NOT EXISTS topic_relationships (
     id BIGSERIAL PRIMARY KEY,
     topic_id UUID REFERENCES topics(id),
     related_topic_id UUID REFERENCES topics(id),
     weight FLOAT,
-    relationship_type TEXT
+    relationship_type TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Topic coverage by domain
+-- Topic Domain Coverage
 CREATE TABLE IF NOT EXISTS topic_domain_coverage (
     topic_id UUID REFERENCES topics(id),
     domain TEXT,
     article_count INT,
     avg_rank FLOAT,
-    PRIMARY KEY (topic_id, domain)
+    PRIMARY KEY (topic_id, domain),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Indexes for performance and idempotency
+-- Pipeline Run Tracking
+CREATE TABLE IF NOT EXISTS runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mode TEXT NOT NULL,
+    status TEXT DEFAULT 'running',
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    keyword_count INT DEFAULT 0,
+    error_summary TEXT,
+    metadata JSONB
+);
+
+-- Individual Keyword Task Tracking
+CREATE TABLE IF NOT EXISTS keyword_tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID REFERENCES runs(id),
+    keyword TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    error_message TEXT,
+    retry_count INT DEFAULT 0,
+    metadata JSONB
+);
+
+-- Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_articles_url ON articles(url);
 CREATE INDEX IF NOT EXISTS idx_keywords_keyword ON keywords(keyword);
 CREATE INDEX IF NOT EXISTS idx_paa_questions_question ON paa_questions(question);
 CREATE INDEX IF NOT EXISTS idx_topics_name ON topics(name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cluster_articles_cluster_article ON cluster_articles(cluster_id, article_id);
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_relationship_unique
-    ON topic_relationships(topic_id, related_topic_id, relationship_type);
-CREATE INDEX IF NOT EXISTS idx_topic_relationship_topic
-    ON topic_relationships(topic_id);
-CREATE INDEX IF NOT EXISTS idx_topic_relationship_related
-    ON topic_relationships(related_topic_id);
-CREATE INDEX IF NOT EXISTS idx_topic_coverage_domain
-    ON topic_domain_coverage(domain);
-=======
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-
--- Pipeline run tracking
-CREATE TABLE IF NOT EXISTS runs (
-    id SERIAL PRIMARY KEY,
-    started_at TIMESTAMP DEFAULT NOW(),
-    completed_at TIMESTAMP,
-    status TEXT,
-    keyword_count INT DEFAULT 0,
-    article_count INT DEFAULT 0,
-    cluster_count INT DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_runs_started_at
-ON runs(started_at);
-
-CREATE TABLE IF NOT EXISTS clusters (
-    id SERIAL PRIMARY KEY,
-    run_id INT REFERENCES runs(id),
-    cluster_label TEXT,
-    cluster_size INT,
-    coherence_score FLOAT,
-    cluster_signature TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_clusters_run
-ON clusters(run_id);
-
-CREATE TABLE IF NOT EXISTS pipeline_metrics (
-    id SERIAL PRIMARY KEY,
-    run_id INT REFERENCES runs(id),
-    serp_results INT,
-    pages_crawled INT,
-    valid_articles INT,
-    embeddings_generated INT,
-    clusters_generated INT,
-    topics_generated INT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_pipeline_metrics_run
-ON pipeline_metrics(run_id);
-
--- Topic graph + coverage tables used by strategy/reporting endpoints
-CREATE TABLE IF NOT EXISTS topic_relationships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_topic_id UUID REFERENCES topics(id),
-    target_topic_id UUID REFERENCES topics(id),
-    relationship_type TEXT,
-    weight FLOAT DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE (source_topic_id, target_topic_id, relationship_type)
-);
-
-CREATE INDEX IF NOT EXISTS idx_topic_relationships_source
-ON topic_relationships(source_topic_id);
-
-CREATE INDEX IF NOT EXISTS idx_topic_relationships_target
-ON topic_relationships(target_topic_id);
-
-CREATE TABLE IF NOT EXISTS topic_domain_coverage (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    topic_id UUID REFERENCES topics(id),
-    domain TEXT NOT NULL,
-    coverage_count INT DEFAULT 0,
-    coverage_score FLOAT DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE (topic_id, domain)
-);
-
-CREATE INDEX IF NOT EXISTS idx_topic_domain_coverage_topic
-ON topic_domain_coverage(topic_id);
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
+CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_relationship_unique ON topic_relationships(topic_id, related_topic_id, relationship_type);
+CREATE INDEX IF NOT EXISTS idx_topic_relationship_topic ON topic_relationships(topic_id);
+CREATE INDEX IF NOT EXISTS idx_topic_coverage_domain ON topic_domain_coverage(domain);

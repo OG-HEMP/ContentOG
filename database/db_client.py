@@ -1,8 +1,10 @@
 import logging
 import os
 import re
+import json
 from typing import Any, Dict, List, Optional
 
+from config.config import settings
 from database.db_connection import get_db
 
 logger = logging.getLogger(__name__)
@@ -32,13 +34,7 @@ class DBClient:
             self._conn = get_db()
             return self._conn
         except Exception as exc:  # pragma: no cover - fallback path
-            strict_mode = str(os.getenv("CONTENTOG_DISABLE_DB_FALLBACK", "false")).strip().lower() in (
-                "1",
-                "true",
-                "yes",
-                "on",
-            )
-            if strict_mode:
+            if settings.disable_db_fallback:
                 raise RuntimeError(f"Database unavailable and fallback is disabled: {exc}") from exc
             logger.warning("Database unavailable; using in-memory fallback: %s", exc)
             self._conn = None
@@ -337,7 +333,7 @@ class DBClient:
                 WHERE id = %s
                 RETURNING id;
                 """,
-                (__import__("json").dumps(strategy_details), existing["id"]),
+                (json.dumps(strategy_details), existing["id"]),
                 fetchone=True,
             )
             if row:
@@ -349,7 +345,7 @@ class DBClient:
             VALUES (%s, %s::jsonb)
             RETURNING id;
             """,
-            (topic_id, __import__("json").dumps(strategy_details)),
+            (topic_id, json.dumps(strategy_details)),
             fetchone=True,
         )
         if row:
@@ -430,34 +426,6 @@ class DBClient:
         self._memory["cluster_articles"].append(payload)
         return payload
 
-    def insert_cluster_articles(self, pillar_id: str, title: str):
-        row = self._execute(
-            """
-            INSERT INTO cluster_articles(cluster_id, article_id)
-            SELECT %s, id FROM articles WHERE title = %s
-            ON CONFLICT DO NOTHING
-            RETURNING id;
-            """,
-            (pillar_id, title),
-            fetchone=True,
-        )
-        if row:
-            return row
-
-        existing = next((c for c in self._memory["cluster_articles"] if c.get("cluster_id") == pillar_id and c.get("title") == title), None)
-        if existing:
-            return existing
-        payload = {"id": f"ca_{len(self._memory['cluster_articles']) + 1}", "cluster_id": pillar_id, "title": title}
-        self._memory["cluster_articles"].append(payload)
-        return payload
-
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
     def save_topic_relationship(self, topic_id: str, related_topic_id: str, weight: float, relationship_type: str):
         normalized_topic_id = str(topic_id).strip()
         normalized_related_id = str(related_topic_id).strip()
@@ -472,53 +440,12 @@ class DBClient:
             RETURNING id, topic_id, related_topic_id, weight, relationship_type;
             """,
             (normalized_topic_id, normalized_related_id, normalized_weight, normalized_type),
-=======
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-
-    def save_topic_relationship(self, source_topic_id: str, target_topic_id: str, relationship_type: str, weight: float):
-        row = self._execute(
-            """
-            INSERT INTO topic_relationships(source_topic_id, target_topic_id, relationship_type, weight)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (source_topic_id, target_topic_id, relationship_type) DO UPDATE
-            SET weight = EXCLUDED.weight
-            RETURNING id;
-            """,
-            (source_topic_id, target_topic_id, relationship_type, float(weight)),
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
             fetchone=True,
         )
         if row:
             return row
-<<<<<<< ours
 
-        existing = self._execute(
-            """
-            SELECT id, topic_id, related_topic_id, weight, relationship_type
-            FROM topic_relationships
-            WHERE topic_id = %s
-              AND related_topic_id = %s
-              AND relationship_type = %s
-            LIMIT 1;
-            """,
-            (normalized_topic_id, normalized_related_id, normalized_type),
-            fetchone=True,
-        )
-        if existing:
-            return existing
-
-        memory_existing = next(
+        memory_rel = next(
             (
                 rel
                 for rel in self._memory["topic_relationships"]
@@ -528,8 +455,8 @@ class DBClient:
             ),
             None,
         )
-        if memory_existing:
-            return memory_existing
+        if memory_rel:
+            return memory_rel
         payload = {
             "id": len(self._memory["topic_relationships"]) + 1,
             "topic_id": normalized_topic_id,
@@ -556,24 +483,12 @@ class DBClient:
             RETURNING topic_id, domain, article_count, avg_rank;
             """,
             (normalized_topic_id, normalized_domain, normalized_count, normalized_avg_rank),
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
             fetchone=True,
         )
         if row:
             return row
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
 
-        memory_existing = next(
+        memory_coverage = next(
             (
                 cov
                 for cov in self._memory["topic_domain_coverage"]
@@ -581,10 +496,10 @@ class DBClient:
             ),
             None,
         )
-        if memory_existing:
-            memory_existing["article_count"] = normalized_count
-            memory_existing["avg_rank"] = normalized_avg_rank
-            return memory_existing
+        if memory_coverage:
+            memory_coverage["article_count"] = normalized_count
+            memory_coverage["avg_rank"] = normalized_avg_rank
+            return memory_coverage
         payload = {
             "topic_id": normalized_topic_id,
             "domain": normalized_domain,
@@ -593,38 +508,6 @@ class DBClient:
         }
         self._memory["topic_domain_coverage"].append(payload)
         return payload
-=======
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-        return {
-            "source_topic_id": source_topic_id,
-            "target_topic_id": target_topic_id,
-            "relationship_type": relationship_type,
-            "weight": float(weight),
-        }
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
 
     def fetch_articles(self):
         rows = self.query("SELECT id, url, title, content, serp_keyword, serp_rank FROM articles ORDER BY created_at ASC")

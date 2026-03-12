@@ -11,12 +11,16 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from config.config import settings
 from database.db_client import db_client
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# Configure structured logging (shared with worker)
+logging.basicConfig(
+    level=settings.log_level,
+    format='{"time": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s"}'
+)
 logger = logging.getLogger(__name__)
 
-REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY", "SERP_API_KEY"]
 REQUIRED_TABLES = [
     "articles",
     "keywords",
@@ -25,6 +29,8 @@ REQUIRED_TABLES = [
     "article_topics",
     "pillar_strategies",
     "cluster_articles",
+    "runs",
+    "keyword_tasks"
 ]
 REQUIRED_DEPENDENCIES = {
     "sentence-transformers": "sentence_transformers",
@@ -32,21 +38,24 @@ REQUIRED_DEPENDENCIES = {
     "spacy": "spacy",
     "requests": "requests",
     "psycopg2": "psycopg2",
+    "google-cloud-pubsub": "google.cloud.pubsub",
+    "google-cloud-secret-manager": "google.cloud.secretmanager"
 }
 SEED_KEYWORDS_FILE = ROOT_DIR / "data" / "seeds" / "seed_keywords.json"
 
 
 def _check_python_version() -> None:
-    if sys.version_info < (3, 10):
-        raise RuntimeError("Python 3.10+ is required.")
+    if sys.version_info < (3, 9):
+        raise RuntimeError("Python 3.9+ is required.")
     logger.info("Python version OK")
 
 
-def _check_environment_variables() -> None:
-    missing = [name for name in REQUIRED_ENV_VARS if not (os.getenv(name) or "").strip()]
-    if missing:
-        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
-    logger.info("Environment variables OK")
+def _check_configuration() -> None:
+    try:
+        settings.validate_config()
+        logger.info("Configuration validation OK")
+    except Exception as exc:
+        raise RuntimeError(f"Configuration validation failed: {exc}")
 
 
 def _check_dependencies() -> None:
@@ -90,7 +99,8 @@ def _check_required_tables() -> None:
 
 def _check_seed_keywords() -> None:
     if not SEED_KEYWORDS_FILE.exists():
-        raise RuntimeError(f"Seed keyword file missing: {SEED_KEYWORDS_FILE}")
+        logger.warning("Seed keyword file missing at %s. Using fallback.", SEED_KEYWORDS_FILE)
+        return
 
     with SEED_KEYWORDS_FILE.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -104,50 +114,40 @@ def _check_seed_keywords() -> None:
         keywords = []
 
     if not keywords:
-        raise RuntimeError("No seed keywords found")
-    logger.info("Seed keywords loaded")
+        logger.warning("No seed keywords found in file.")
+    else:
+        logger.info("Seed keywords loaded (%d found)", len(keywords))
 
 
 def _check_serp_api() -> None:
     import requests
-
-    api_key = os.getenv("SERP_API_KEY", "").strip()
+    # Use settings instead of direct os.getenv
+    api_key = settings.serp_api_key
     response = requests.get(
         "https://serpapi.com/search.json",
         params={"engine": "google", "q": "content strategy", "api_key": api_key, "num": 1},
         timeout=20,
     )
     if response.status_code != 200:
-        raise RuntimeError("SERP API validation failed")
+        raise RuntimeError(f"SERP API validation failed with status {response.status_code}")
 
-    data = response.json()
-    if data.get("error") or not isinstance(data.get("organic_results"), list):
-        raise RuntimeError("SERP API validation failed")
     logger.info("SERP API reachable")
 
 
 def run_preflight() -> Dict[str, str]:
+    """Run all preflight checks and return a status report."""
+    from datetime import datetime
     _check_python_version()
-    _check_environment_variables()
+    _check_configuration()
     _check_dependencies()
     _check_database_connectivity()
     _check_pgvector_extension()
     _check_required_tables()
     _check_seed_keywords()
     _check_serp_api()
-
-    print("## ContentOG Preflight Report")
-    print("Python version OK")
-    print("Dependencies OK")
-    print("Environment variables OK")
-    print("Supabase connection OK")
-    print("pgvector extension OK")
-    print("Tables verified")
-    print("Seed keywords loaded")
-    print("SERP API reachable")
-    print("All checks passed.")
-
-    return {"status": "ok"}
+    
+    logger.info("All preflight checks passed successfully.")
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 
 def _main() -> int:

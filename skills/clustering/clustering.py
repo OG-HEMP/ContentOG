@@ -2,10 +2,7 @@ import logging
 import math
 from typing import Dict, List
 
-try:
-    import yaml
-except Exception:  # pragma: no cover
-    yaml = None
+from config.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -54,17 +51,11 @@ def cluster_embeddings(embeddings: List[List[float]], articles: List[dict]) -> D
     except Exception as exc:
         raise RuntimeError(f"HDBSCAN dependencies are unavailable: {exc}") from exc
 
-    min_cluster_size = 2
-    if yaml is not None:
-        try:
-            with open("config/settings.yaml", "r", encoding="utf-8") as handle:
-                settings = yaml.safe_load(handle) or {}
-            min_cluster_size = int(((settings.get("clustering") or {}).get("min_cluster_size")) or min_cluster_size)
-        except Exception:
-            pass
-
     matrix = np.asarray(distance_matrix, dtype=float)
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, metric="precomputed")
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=settings.clustering_min_cluster_size, 
+        metric="precomputed"
+    )
     labels = clusterer.fit_predict(matrix)
     mapping = {article_ids[idx]: int(label) for idx, label in enumerate(labels)}
     logger.info("Generated %d cluster labels with HDBSCAN", len(mapping))

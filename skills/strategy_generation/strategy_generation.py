@@ -1,7 +1,7 @@
 import logging
 import json
 from collections import Counter
-from typing import Dict, List
+from typing import Dict, List, Any
 from urllib.parse import urlparse
 
 from database.db_client import db_client
@@ -160,41 +160,6 @@ def _topic_keywords(topic: Dict[str, str], linked_articles: List[Dict[str, str]]
     return tokens
 
 
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
-def _save_topic_relationship(source_topic_id: str, target_topic_id: str, relationship_type: str, weight: float):
-    saver = getattr(db_client, "save_topic_relationship", None)
-    if callable(saver):
-        return saver(source_topic_id, target_topic_id, relationship_type, weight)
-
-    row = db_client._execute(
-        """
-        INSERT INTO topic_relationships(source_topic_id, target_topic_id, relationship_type, weight)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (source_topic_id, target_topic_id, relationship_type) DO UPDATE
-        SET weight = EXCLUDED.weight
-        RETURNING id;
-        """,
-        (source_topic_id, target_topic_id, relationship_type, float(weight)),
-        fetchone=True,
-    )
-    if row:
-        return row
-    return {
-        "source_topic_id": source_topic_id,
-        "target_topic_id": target_topic_id,
-        "relationship_type": relationship_type,
-        "weight": float(weight),
-    }
-
-
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 def _persist_topic_graph_fallback(topic_records: List[Dict[str, object]]):
     if len(topic_records) < 2:
         return
@@ -221,15 +186,8 @@ def _persist_topic_graph_fallback(topic_records: List[Dict[str, object]]):
             same_cluster = left.get("cluster_id") == right.get("cluster_id")
             if not overlap and not same_cluster:
                 continue
-<<<<<<< ours
-<<<<<<< ours
+
             db_client.save_topic_relationship(
-=======
-            _save_topic_relationship(
->>>>>>> theirs
-=======
-            _save_topic_relationship(
->>>>>>> theirs
                 str(left["topic_id"]),
                 str(right["topic_id"]),
                 relationship_type="keyword_overlap",
@@ -241,7 +199,6 @@ def _persist_topic_graph_fallback(topic_records: List[Dict[str, object]]):
         logger.info("Added %d fallback topic graph edge(s)", fallback_edges)
 
 
-
 def generate_strategy(
     topics: List[Dict[str, str]],
     clustered_articles: Dict[int, List[Dict[str, str]]],
@@ -250,20 +207,6 @@ def generate_strategy(
     pillar_pages = []
     cluster_topics = []
     briefs = []
-    topic_records: List[Dict[str, object]] = []
-
-    topic_records: List[Dict[str, object]] = []
-
-    topic_records: List[Dict[str, object]] = []
-
-    topic_records: List[Dict[str, object]] = []
-
-    topic_records: List[Dict[str, object]] = []
-
-    topic_records: List[Dict[str, object]] = []
-
-    topic_records: List[Dict[str, object]] = []
-
     topic_records: List[Dict[str, object]] = []
 
     for topic in topics:
@@ -291,14 +234,18 @@ def generate_strategy(
         briefs.append(brief)
 
         linked_articles = _cluster_articles_for_topic(clustered_articles, cluster_id)
+        
+        # Add to topic_records for relationship mapping
         topic_records.append(
             {
                 "topic_id": topic_id,
                 "topic": topic["name"],
                 "cluster_id": cluster_id,
                 "linked_articles": linked_articles,
+                "keywords": _topic_keywords(topic, linked_articles),
             }
         )
+        
         for article in linked_articles:
             article_id = article.get("article_id")
             if not article_id:
@@ -310,14 +257,6 @@ def generate_strategy(
                 relevance = 1.0
             db_client.insert_article_topic(str(article_id), str(topic_id), relevance_score=relevance)
             db_client.insert_cluster_article(cluster_id=cluster_id, article_id=str(article_id))
-
-        topic_records.append(
-            {
-                "topic_id": topic_id,
-                "cluster_id": cluster_id,
-                "keywords": _topic_keywords(topic, linked_articles),
-            }
-        )
 
     _persist_topic_graph_fallback(topic_records)
 

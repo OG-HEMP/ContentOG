@@ -16,16 +16,22 @@ from agents.paa_agent.paa_agent import PaaAgent
 from agents.serp_agent.serp_agent import SerpAgent
 from agents.strategy_agent.strategy_agent import StrategyAgent
 from agents.topic_agent.topic_agent import TopicAgent
+from config.config import settings
 from scripts.preflight_check import run_preflight
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# Configure structured logging (consistent with worker/orchestrator)
+logging.basicConfig(
+    level=settings.log_level,
+    format='{"time": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s"}'
+)
 logger = logging.getLogger(__name__)
 
 _DEFAULT_KEYWORD = "content strategy"
-_DEFAULT_KEYWORD_LIMIT = 3
 
 
-def _load_seed_keywords(default: str = _DEFAULT_KEYWORD, limit: int = _DEFAULT_KEYWORD_LIMIT) -> List[str]:
+def _load_seed_keywords(default: str = _DEFAULT_KEYWORD, limit: Optional[int] = None) -> List[str]:
+    if limit is None:
+        limit = settings.keyword_limit
     seed_path = ROOT_DIR / "data" / "seeds" / "seed_keywords.json"
     if not seed_path.exists():
         return [default]
@@ -55,9 +61,11 @@ def _run_single_keyword(keyword: str) -> Dict[str, object]:
     return context
 
 
-def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: int = _DEFAULT_KEYWORD_LIMIT) -> Dict[str, object]:
+def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: Optional[int] = None) -> Dict[str, object]:
+    """Execute the recovery/discovery pipeline for given keywords."""
     run_preflight()
-    selected_keywords = keywords or _load_seed_keywords(limit=keyword_limit)
+    limit = keyword_limit if keyword_limit is not None else settings.keyword_limit
+    selected_keywords = keywords or _load_seed_keywords(limit=limit)
     logger.info("Starting ContentOG discovery pipeline for %d keyword(s)", len(selected_keywords))
 
     runs: List[Dict[str, object]] = []
@@ -94,8 +102,7 @@ def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: int = _DEF
 
 def _main() -> int:
     try:
-        limit = int(os.getenv("CONTENTOG_KEYWORD_LIMIT", str(_DEFAULT_KEYWORD_LIMIT)))
-        summary = run_pipeline(keyword_limit=limit)
+        summary = run_pipeline()
         logger.info(
             "Summary: keywords=%d total_articles=%d total_topics=%d",
             len(summary.get("keywords", [])),
@@ -109,4 +116,4 @@ def _main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(_main())
+    sys.exit(_main())
