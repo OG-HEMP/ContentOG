@@ -106,6 +106,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_cluster_articles_cluster_article ON cluste
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_relationship_unique
     ON topic_relationships(topic_id, related_topic_id, relationship_type);
 CREATE INDEX IF NOT EXISTS idx_topic_relationship_topic
@@ -115,6 +117,10 @@ CREATE INDEX IF NOT EXISTS idx_topic_relationship_related
 CREATE INDEX IF NOT EXISTS idx_topic_coverage_domain
     ON topic_domain_coverage(domain);
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -198,6 +204,12 @@ ON topic_domain_coverage(topic_id);
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

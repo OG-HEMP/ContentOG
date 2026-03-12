@@ -456,6 +456,8 @@ class DBClient:
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
     def save_topic_relationship(self, topic_id: str, related_topic_id: str, weight: float, relationship_type: str):
         normalized_topic_id = str(topic_id).strip()
         normalized_related_id = str(related_topic_id).strip()
@@ -610,6 +612,10 @@ class DBClient:
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs

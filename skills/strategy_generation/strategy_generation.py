@@ -160,6 +160,41 @@ def _topic_keywords(topic: Dict[str, str], linked_articles: List[Dict[str, str]]
     return tokens
 
 
+<<<<<<< ours
+<<<<<<< ours
+=======
+=======
+>>>>>>> theirs
+def _save_topic_relationship(source_topic_id: str, target_topic_id: str, relationship_type: str, weight: float):
+    saver = getattr(db_client, "save_topic_relationship", None)
+    if callable(saver):
+        return saver(source_topic_id, target_topic_id, relationship_type, weight)
+
+    row = db_client._execute(
+        """
+        INSERT INTO topic_relationships(source_topic_id, target_topic_id, relationship_type, weight)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (source_topic_id, target_topic_id, relationship_type) DO UPDATE
+        SET weight = EXCLUDED.weight
+        RETURNING id;
+        """,
+        (source_topic_id, target_topic_id, relationship_type, float(weight)),
+        fetchone=True,
+    )
+    if row:
+        return row
+    return {
+        "source_topic_id": source_topic_id,
+        "target_topic_id": target_topic_id,
+        "relationship_type": relationship_type,
+        "weight": float(weight),
+    }
+
+
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 def _persist_topic_graph_fallback(topic_records: List[Dict[str, object]]):
     if len(topic_records) < 2:
         return
@@ -186,7 +221,15 @@ def _persist_topic_graph_fallback(topic_records: List[Dict[str, object]]):
             same_cluster = left.get("cluster_id") == right.get("cluster_id")
             if not overlap and not same_cluster:
                 continue
+<<<<<<< ours
+<<<<<<< ours
             db_client.save_topic_relationship(
+=======
+            _save_topic_relationship(
+>>>>>>> theirs
+=======
+            _save_topic_relationship(
+>>>>>>> theirs
                 str(left["topic_id"]),
                 str(right["topic_id"]),
                 relationship_type="keyword_overlap",
@@ -207,6 +250,10 @@ def generate_strategy(
     pillar_pages = []
     cluster_topics = []
     briefs = []
+    topic_records: List[Dict[str, object]] = []
+
+    topic_records: List[Dict[str, object]] = []
+
     topic_records: List[Dict[str, object]] = []
 
     topic_records: List[Dict[str, object]] = []
