@@ -1,23 +1,22 @@
+import importlib.util
+import json
 import logging
 import os
 import sys
 from pathlib import Path
 from typing import Dict, List
 
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from database.db_client import db_client
-from skills.embeddings.embeddings import generate_embedding
-from skills.paa_extraction.paa_extraction import extract_paa_questions
-from skills.serp_discovery.serp_discovery import discover_serp_urls
-from skills.web_crawling.web_crawling import crawl_page
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-REQUIRED_ENV_VARS = ["POSTGRESQL", "OPENAI_API_KEY", "SERP_API_KEY"]
+REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY", "SERP_API_KEY"]
 REQUIRED_TABLES = [
     "articles",
     "keywords",
@@ -27,88 +26,136 @@ REQUIRED_TABLES = [
     "pillar_strategies",
     "cluster_articles",
 ]
+REQUIRED_DEPENDENCIES = {
+    "sentence-transformers": "sentence_transformers",
+    "hdbscan": "hdbscan",
+    "spacy": "spacy",
+    "requests": "requests",
+    "psycopg2": "psycopg2",
+}
+SEED_KEYWORDS_FILE = ROOT_DIR / "data" / "seeds" / "seed_keywords.json"
 
 
-def _check_env() -> Dict[str, bool]:
-    result = {}
-    for key in REQUIRED_ENV_VARS:
-        result[key] = bool((os.getenv(key) or "").strip())
-    missing = [key for key, present in result.items() if not present]
+def _check_python_version() -> None:
+    if sys.version_info < (3, 10):
+        raise RuntimeError("Python 3.10+ is required.")
+    logger.info("Python version OK")
+
+
+def _check_environment_variables() -> None:
+    missing = [name for name in REQUIRED_ENV_VARS if not (os.getenv(name) or "").strip()]
     if missing:
-        raise RuntimeError(f"Missing required env var(s): {', '.join(missing)}")
-    return result
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+    logger.info("Environment variables OK")
 
 
-def _check_database() -> Dict[str, int]:
+def _check_dependencies() -> None:
+    missing: List[str] = []
+    for package_name, module_name in REQUIRED_DEPENDENCIES.items():
+        if importlib.util.find_spec(module_name) is None:
+            missing.append(package_name)
+    if missing:
+        raise RuntimeError(f"Dependency missing: {', '.join(missing)}")
+    logger.info("Dependencies OK")
+
+
+def _check_database_connectivity() -> None:
     conn = db_client.connect()
     if conn is None:
-        raise RuntimeError("Database connection failed.")
+        raise RuntimeError("Supabase connection failed")
+    logger.info("Supabase connection OK")
 
-    tables = db_client.query(
+
+def _check_pgvector_extension() -> None:
+    rows = db_client.query("SELECT extname FROM pg_extension WHERE extname='vector';")
+    if not rows:
+        raise RuntimeError("pgvector extension not installed")
+    logger.info("pgvector extension OK")
+
+
+def _check_required_tables() -> None:
+    rows = db_client.query(
         """
         SELECT table_name
         FROM information_schema.tables
-        WHERE table_schema='public';
+        WHERE table_schema = 'public';
         """
     )
-    existing = {row.get("table_name") for row in tables}
-    missing = [name for name in REQUIRED_TABLES if name not in existing]
+    existing = {row.get("table_name") for row in rows}
+    missing = [table for table in REQUIRED_TABLES if table not in existing]
     if missing:
-        raise RuntimeError(f"Missing database tables: {', '.join(missing)}")
-
-    extension_rows = db_client.query("SELECT extname FROM pg_extension WHERE extname='vector';")
-    if not extension_rows:
-        raise RuntimeError("pgvector extension 'vector' is not installed.")
-
-    return {"table_count": len(existing)}
+        raise RuntimeError(f"Required table(s) missing: {', '.join(missing)}")
+    logger.info("Tables verified")
 
 
-def _check_providers() -> Dict[str, int]:
-    serp_results = discover_serp_urls("content strategy")
-    if not serp_results:
-        raise RuntimeError("SerpApi health check returned no SERP results.")
+def _check_seed_keywords() -> None:
+    if not SEED_KEYWORDS_FILE.exists():
+        raise RuntimeError(f"Seed keyword file missing: {SEED_KEYWORDS_FILE}")
 
-    questions = extract_paa_questions("content strategy")
-    if not questions:
-        raise RuntimeError("SerpApi health check returned no PAA questions.")
+    with SEED_KEYWORDS_FILE.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
 
-    vector = generate_embedding("contentog preflight check")
-    if not vector:
-        raise RuntimeError("OpenAI embeddings health check returned empty vector.")
+    if isinstance(payload, list):
+        keywords = [str(item).strip() for item in payload if str(item).strip()]
+    elif isinstance(payload, dict):
+        raw_keywords = payload.get("keywords", [])
+        keywords = [str(item).strip() for item in raw_keywords if str(item).strip()]
+    else:
+        keywords = []
 
-    crawled = 0
-    for item in serp_results[:3]:
-        try:
-            payload = crawl_page(item["url"])
-            if payload.get("content"):
-                crawled += 1
-                break
-        except Exception:
-            continue
-    if crawled == 0:
-        raise RuntimeError("Web crawling health check failed for top SERP URLs.")
-
-    return {"serp_results": len(serp_results), "paa_questions": len(questions), "embedding_dimensions": len(vector)}
+    if not keywords:
+        raise RuntimeError("No seed keywords found")
+    logger.info("Seed keywords loaded")
 
 
-def run_preflight() -> Dict[str, Dict[str, int]]:
-    env_status = _check_env()
-    db_status = _check_database()
-    provider_status = _check_providers()
-    return {
-        "env": {key: int(value) for key, value in env_status.items()},
-        "database": db_status,
-        "providers": provider_status,
-    }
+def _check_serp_api() -> None:
+    import requests
+
+    api_key = os.getenv("SERP_API_KEY", "").strip()
+    response = requests.get(
+        "https://serpapi.com/search.json",
+        params={"engine": "google", "q": "content strategy", "api_key": api_key, "num": 1},
+        timeout=20,
+    )
+    if response.status_code != 200:
+        raise RuntimeError("SERP API validation failed")
+
+    data = response.json()
+    if data.get("error") or not isinstance(data.get("organic_results"), list):
+        raise RuntimeError("SERP API validation failed")
+    logger.info("SERP API reachable")
+
+
+def run_preflight() -> Dict[str, str]:
+    _check_python_version()
+    _check_environment_variables()
+    _check_dependencies()
+    _check_database_connectivity()
+    _check_pgvector_extension()
+    _check_required_tables()
+    _check_seed_keywords()
+    _check_serp_api()
+
+    print("## ContentOG Preflight Report")
+    print("Python version OK")
+    print("Dependencies OK")
+    print("Environment variables OK")
+    print("Supabase connection OK")
+    print("pgvector extension OK")
+    print("Tables verified")
+    print("Seed keywords loaded")
+    print("SERP API reachable")
+    print("All checks passed.")
+
+    return {"status": "ok"}
 
 
 def _main() -> int:
     try:
-        report = run_preflight()
-        logger.info("Preflight succeeded: %s", report)
+        run_preflight()
         return 0
     except Exception as exc:
-        logger.exception("Preflight failed: %s", exc)
+        logger.error("Preflight failed: %s", exc)
         return 1
 
 

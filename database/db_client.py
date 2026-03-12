@@ -18,6 +18,7 @@ class DBClient:
             "articles": [],
             "paa_questions": [],
             "topics": [],
+            "article_topics": [],
             "pillar_strategies": [],
             "cluster_articles": [],
         }
@@ -313,6 +314,33 @@ class DBClient:
         return payload
 
     def insert_pillar_strategy(self, topic_id: str, strategy_details: Dict[str, Any]):
+        # Keep strategy rows idempotent per topic_id.
+        existing = self._execute(
+            """
+            SELECT id
+            FROM pillar_strategies
+            WHERE topic_id = %s
+            ORDER BY created_at ASC
+            LIMIT 1;
+            """,
+            (topic_id,),
+            fetchone=True,
+        )
+        if existing:
+            row = self._execute(
+                """
+                UPDATE pillar_strategies
+                SET strategy_details = %s::jsonb,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id;
+                """,
+                (__import__("json").dumps(strategy_details), existing["id"]),
+                fetchone=True,
+            )
+            if row:
+                return row
+
         row = self._execute(
             """
             INSERT INTO pillar_strategies(topic_id, strategy_details)
@@ -325,7 +353,16 @@ class DBClient:
         if row:
             return row
 
-        payload = {"id": f"pillar_{len(self._memory['pillar_strategies']) + 1}", "topic_id": topic_id, "strategy_details": strategy_details}
+        existing = next((p for p in self._memory["pillar_strategies"] if p.get("topic_id") == topic_id), None)
+        if existing:
+            existing["strategy_details"] = strategy_details
+            return existing
+
+        payload = {
+            "id": f"pillar_{len(self._memory['pillar_strategies']) + 1}",
+            "topic_id": topic_id,
+            "strategy_details": strategy_details,
+        }
         self._memory["pillar_strategies"].append(payload)
         return payload
 
@@ -343,8 +380,21 @@ class DBClient:
         )
         if row:
             return row
-        # No memory table for article_topics was previously defined; keep behavior no-op fallback payload.
-        return {"article_id": article_id, "topic_id": topic_id}
+
+        existing = next(
+            (
+                item
+                for item in self._memory["article_topics"]
+                if item.get("article_id") == article_id and item.get("topic_id") == topic_id
+            ),
+            None,
+        )
+        if existing:
+            existing["relevance_score"] = float(relevance_score)
+            return existing
+        payload = {"article_id": article_id, "topic_id": topic_id, "relevance_score": float(relevance_score)}
+        self._memory["article_topics"].append(payload)
+        return payload
 
     def insert_cluster_article(self, cluster_id: str, article_id: str):
         row = self._execute(

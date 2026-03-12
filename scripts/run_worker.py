@@ -51,6 +51,8 @@ def run_worker() -> Dict[str, object]:
         "pipeline": {
             "total_articles": pipeline_summary.get("total_articles", 0),
             "total_topics": pipeline_summary.get("total_topics", 0),
+            "total_topic_graph_nodes": pipeline_summary.get("total_topic_graph_nodes", 0),
+            "total_topic_graph_edges": pipeline_summary.get("total_topic_graph_edges", 0),
             "runs": len(pipeline_summary.get("runs", [])),
         },
     }

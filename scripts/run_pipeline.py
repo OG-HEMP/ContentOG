@@ -16,6 +16,7 @@ from agents.paa_agent.paa_agent import PaaAgent
 from agents.serp_agent.serp_agent import SerpAgent
 from agents.strategy_agent.strategy_agent import StrategyAgent
 from agents.topic_agent.topic_agent import TopicAgent
+from scripts.preflight_check import run_preflight
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ def _run_single_keyword(keyword: str) -> Dict[str, object]:
 
 
 def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: int = _DEFAULT_KEYWORD_LIMIT) -> Dict[str, object]:
+    run_preflight()
     selected_keywords = keywords or _load_seed_keywords(limit=keyword_limit)
     logger.info("Starting ContentOG discovery pipeline for %d keyword(s)", len(selected_keywords))
 
@@ -62,12 +64,18 @@ def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: int = _DEF
     for keyword in selected_keywords:
         logger.info("Running pipeline for keyword: %s", keyword)
         context = _run_single_keyword(keyword)
+        strategy = context.get("strategy", {}) if isinstance(context.get("strategy"), dict) else {}
+        topic_graph = strategy.get("industry_topic_graph", {}) if isinstance(strategy.get("industry_topic_graph"), dict) else {}
+        coverage = strategy.get("topic_coverage_by_domain", []) if isinstance(strategy.get("topic_coverage_by_domain"), list) else []
         runs.append(
             {
                 "keyword": keyword,
                 "articles_count": len(context.get("articles", [])),
                 "topics_count": len(context.get("topics", [])),
                 "cluster_count": len(context.get("clustered_titles", {})),
+                "topic_graph_nodes": len(topic_graph.get("nodes", [])) if isinstance(topic_graph, dict) else 0,
+                "topic_graph_edges": len(topic_graph.get("edges", [])) if isinstance(topic_graph, dict) else 0,
+                "domain_coverage_topics": len(coverage),
                 "context": context,
             }
         )
@@ -77,6 +85,8 @@ def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: int = _DEF
         "runs": runs,
         "total_articles": sum(int(run["articles_count"]) for run in runs),
         "total_topics": sum(int(run["topics_count"]) for run in runs),
+        "total_topic_graph_nodes": sum(int(run["topic_graph_nodes"]) for run in runs),
+        "total_topic_graph_edges": sum(int(run["topic_graph_edges"]) for run in runs),
     }
     logger.info("Pipeline execution complete for %d keyword(s)", len(selected_keywords))
     return summary
