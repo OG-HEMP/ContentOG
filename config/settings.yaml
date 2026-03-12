@@ -1,22 +1,38 @@
 # ContentOG Operational Settings
 
 crawler:
+  provider: "http" # options: http, firecrawl
   limit_per_domain: 50
   max_depth: 2
   timeout: 30
+  retry_attempts: 3
+  backoff_seconds: 1.0
+  min_success_per_keyword: 1
 
 serp:
   results_per_keyword: 10
   region: "us"
   language: "en"
+  timeout: 30
+  retry_attempts: 3
+  backoff_seconds: 1.0
 
 embeddings:
   model_name: "text-embedding-3-small"
   dimensions: 1536
+  timeout: 60
+  retry_attempts: 3
+  backoff_seconds: 1.0
 
 clustering:
-  min_cluster_size: 5
+  min_cluster_size: 2
   metric: "cosine"
+
+llm:
+  model_name: "gpt-4o-mini"
+  timeout: 90
+  retry_attempts: 3
+  backoff_seconds: 1.0
 
 scheduling:
   industry_crawl_interval: "monthly"

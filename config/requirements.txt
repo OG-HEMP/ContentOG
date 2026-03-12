@@ -1,0 +1,8 @@
+python-dotenv>=1.0.1
+psycopg2-binary>=2.9.11
+hdbscan>=0.8.41
+numpy>=2.0.2
+scikit-learn>=1.6.1
+scipy>=1.13.1
+PyYAML>=6.0.3
+openai>=1.68.2

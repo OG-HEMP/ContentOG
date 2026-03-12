@@ -18,12 +18,21 @@ CREATE TABLE IF NOT EXISTS articles (
     url TEXT NOT NULL UNIQUE,
     title TEXT,
     content TEXT,
+    serp_keyword TEXT,
+    serp_rank INTEGER,
     publish_date TIMESTAMP WITH TIME ZONE,
     word_count INTEGER,
     embedding vector(1536), -- Defaulting to 1536 for OpenAI embeddings, can be adjusted
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Safe migration path for existing databases
+ALTER TABLE IF EXISTS articles
+    ADD COLUMN IF NOT EXISTS serp_keyword TEXT;
+
+ALTER TABLE IF EXISTS articles
+    ADD COLUMN IF NOT EXISTS serp_rank INTEGER;
 
 -- PAA Questions Table
 CREATE TABLE IF NOT EXISTS paa_questions (
@@ -72,3 +81,4 @@ CREATE INDEX IF NOT EXISTS idx_articles_url ON articles(url);
 CREATE INDEX IF NOT EXISTS idx_keywords_keyword ON keywords(keyword);
 CREATE INDEX IF NOT EXISTS idx_paa_questions_question ON paa_questions(question);
 CREATE INDEX IF NOT EXISTS idx_topics_name ON topics(name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cluster_articles_cluster_article ON cluster_articles(cluster_id, article_id);
