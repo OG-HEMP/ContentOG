@@ -146,6 +146,59 @@ def _generate_topic_strategy(topic: Dict[str, str], paa_questions: List[str]) ->
     return response
 
 
+def _topic_keywords(topic: Dict[str, str], linked_articles: List[Dict[str, str]]) -> set:
+    values = [str(topic.get("name", "")), str(topic.get("description", ""))]
+    for article in linked_articles:
+        values.append(str(article.get("keyword", "")))
+        values.append(str(article.get("title", "")))
+    tokens = set()
+    for value in values:
+        for token in value.lower().replace("/", " ").replace("-", " ").split():
+            token = token.strip(" ,.:;!?()[]{}\"'`")
+            if len(token) > 2:
+                tokens.add(token)
+    return tokens
+
+
+def _persist_topic_graph_fallback(topic_records: List[Dict[str, object]]):
+    if len(topic_records) < 2:
+        return
+
+    similarity_edges = 0
+    fallback_edges = 0
+
+    for i in range(len(topic_records)):
+        for j in range(i + 1, len(topic_records)):
+            left = topic_records[i]
+            right = topic_records[j]
+            overlap = left["keywords"].intersection(right["keywords"])
+            if overlap:
+                similarity_edges += 1
+
+    if similarity_edges > 0:
+        return
+
+    for i in range(len(topic_records)):
+        for j in range(i + 1, len(topic_records)):
+            left = topic_records[i]
+            right = topic_records[j]
+            overlap = left["keywords"].intersection(right["keywords"])
+            same_cluster = left.get("cluster_id") == right.get("cluster_id")
+            if not overlap and not same_cluster:
+                continue
+            db_client.save_topic_relationship(
+                str(left["topic_id"]),
+                str(right["topic_id"]),
+                relationship_type="keyword_overlap",
+                weight=0.3,
+            )
+            fallback_edges += 1
+
+    if fallback_edges:
+        logger.info("Added %d fallback topic graph edge(s)", fallback_edges)
+
+
+
 def generate_strategy(
     topics: List[Dict[str, str]],
     clustered_articles: Dict[int, List[Dict[str, str]]],
@@ -154,6 +207,16 @@ def generate_strategy(
     pillar_pages = []
     cluster_topics = []
     briefs = []
+    topic_records: List[Dict[str, object]] = []
+
+    topic_records: List[Dict[str, object]] = []
+
+    topic_records: List[Dict[str, object]] = []
+
+    topic_records: List[Dict[str, object]] = []
+
+    topic_records: List[Dict[str, object]] = []
+
     topic_records: List[Dict[str, object]] = []
 
     for topic in topics:
@@ -200,6 +263,16 @@ def generate_strategy(
                 relevance = 1.0
             db_client.insert_article_topic(str(article_id), str(topic_id), relevance_score=relevance)
             db_client.insert_cluster_article(cluster_id=cluster_id, article_id=str(article_id))
+
+        topic_records.append(
+            {
+                "topic_id": topic_id,
+                "cluster_id": cluster_id,
+                "keywords": _topic_keywords(topic, linked_articles),
+            }
+        )
+
+    _persist_topic_graph_fallback(topic_records)
 
     logger.info("Generated strategy for %d topics", len(topics))
     coverage_by_domain = _topic_coverage_by_domain(topic_records)
