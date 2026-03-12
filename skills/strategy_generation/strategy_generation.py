@@ -38,9 +38,23 @@ def _topic_coverage_by_domain(topic_records: List[Dict[str, object]]) -> List[Di
         linked_articles = record.get("linked_articles", [])
         if not isinstance(linked_articles, list):
             linked_articles = []
-        domain_counts = Counter(
-            domain for domain in (_article_domain(article) for article in linked_articles) if domain
-        )
+        domain_counts: Counter = Counter()
+        domain_rank_totals: Dict[str, float] = {}
+        domain_rank_counts: Counter = Counter()
+        for article in linked_articles:
+            if not isinstance(article, dict):
+                continue
+            domain = _article_domain(article)
+            if not domain:
+                continue
+            domain_counts[domain] += 1
+            try:
+                rank = float(article.get("serp_rank"))
+                if rank > 0:
+                    domain_rank_totals[domain] = domain_rank_totals.get(domain, 0.0) + rank
+                    domain_rank_counts[domain] += 1
+            except Exception:
+                continue
         coverage.append(
             {
                 "topic_id": str(record.get("topic_id", "")),
@@ -48,7 +62,15 @@ def _topic_coverage_by_domain(topic_records: List[Dict[str, object]]) -> List[Di
                 "cluster_id": str(record.get("cluster_id", "")),
                 "total_articles": int(sum(domain_counts.values())),
                 "domains": [
-                    {"domain": domain, "article_count": count}
+                    {
+                        "domain": domain,
+                        "article_count": count,
+                        "avg_rank": (
+                            round(domain_rank_totals[domain] / domain_rank_counts[domain], 4)
+                            if domain_rank_counts[domain]
+                            else None
+                        ),
+                    }
                     for domain, count in sorted(domain_counts.items(), key=lambda item: (-item[1], item[0]))
                 ],
             }
@@ -182,6 +204,54 @@ def generate_strategy(
     logger.info("Generated strategy for %d topics", len(topics))
     coverage_by_domain = _topic_coverage_by_domain(topic_records)
     topic_graph = _industry_topic_graph(topic_records)
+
+    for edge in topic_graph.get("edges", []):
+        source_topic_id = str(edge.get("source", "")).strip()
+        related_topic_id = str(edge.get("target", "")).strip()
+        if not source_topic_id or not related_topic_id:
+            continue
+        if source_topic_id == related_topic_id:
+            continue
+        try:
+            weight = float(edge.get("strength", 0.0))
+        except Exception:
+            weight = 0.0
+        db_client.save_topic_relationship(
+            topic_id=source_topic_id,
+            related_topic_id=related_topic_id,
+            weight=weight,
+            relationship_type="semantic_similarity",
+        )
+
+    for coverage in coverage_by_domain:
+        topic_id = str(coverage.get("topic_id", "")).strip()
+        if not topic_id:
+            continue
+        domains = coverage.get("domains", [])
+        if not isinstance(domains, list):
+            continue
+        for domain_stats in domains:
+            if not isinstance(domain_stats, dict):
+                continue
+            domain = str(domain_stats.get("domain", "")).strip().lower()
+            if not domain:
+                continue
+            try:
+                article_count = int(domain_stats.get("article_count", 0))
+            except Exception:
+                article_count = 0
+            avg_rank_raw = domain_stats.get("avg_rank")
+            try:
+                avg_rank = None if avg_rank_raw is None else float(avg_rank_raw)
+            except Exception:
+                avg_rank = None
+            db_client.save_topic_coverage(
+                topic_id=topic_id,
+                domain=domain,
+                article_count=article_count,
+                avg_rank=avg_rank,
+            )
+
     return {
         "pillar_pages": pillar_pages,
         "cluster_topics": cluster_topics,

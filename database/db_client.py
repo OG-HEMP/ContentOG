@@ -21,6 +21,8 @@ class DBClient:
             "article_topics": [],
             "pillar_strategies": [],
             "cluster_articles": [],
+            "topic_relationships": [],
+            "topic_domain_coverage": [],
         }
 
     def connect(self):
@@ -447,6 +449,104 @@ class DBClient:
             return existing
         payload = {"id": f"ca_{len(self._memory['cluster_articles']) + 1}", "cluster_id": pillar_id, "title": title}
         self._memory["cluster_articles"].append(payload)
+        return payload
+
+    def save_topic_relationship(self, topic_id: str, related_topic_id: str, weight: float, relationship_type: str):
+        normalized_topic_id = str(topic_id).strip()
+        normalized_related_id = str(related_topic_id).strip()
+        normalized_type = str(relationship_type).strip()
+        normalized_weight = float(weight)
+
+        row = self._execute(
+            """
+            INSERT INTO topic_relationships(topic_id, related_topic_id, weight, relationship_type)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (topic_id, related_topic_id, relationship_type) DO NOTHING
+            RETURNING id, topic_id, related_topic_id, weight, relationship_type;
+            """,
+            (normalized_topic_id, normalized_related_id, normalized_weight, normalized_type),
+            fetchone=True,
+        )
+        if row:
+            return row
+
+        existing = self._execute(
+            """
+            SELECT id, topic_id, related_topic_id, weight, relationship_type
+            FROM topic_relationships
+            WHERE topic_id = %s
+              AND related_topic_id = %s
+              AND relationship_type = %s
+            LIMIT 1;
+            """,
+            (normalized_topic_id, normalized_related_id, normalized_type),
+            fetchone=True,
+        )
+        if existing:
+            return existing
+
+        memory_existing = next(
+            (
+                rel
+                for rel in self._memory["topic_relationships"]
+                if rel.get("topic_id") == normalized_topic_id
+                and rel.get("related_topic_id") == normalized_related_id
+                and rel.get("relationship_type") == normalized_type
+            ),
+            None,
+        )
+        if memory_existing:
+            return memory_existing
+        payload = {
+            "id": len(self._memory["topic_relationships"]) + 1,
+            "topic_id": normalized_topic_id,
+            "related_topic_id": normalized_related_id,
+            "weight": normalized_weight,
+            "relationship_type": normalized_type,
+        }
+        self._memory["topic_relationships"].append(payload)
+        return payload
+
+    def save_topic_coverage(self, topic_id: str, domain: str, article_count: int, avg_rank: Optional[float]):
+        normalized_topic_id = str(topic_id).strip()
+        normalized_domain = str(domain).strip().lower()
+        normalized_count = int(article_count)
+        normalized_avg_rank = None if avg_rank is None else float(avg_rank)
+
+        row = self._execute(
+            """
+            INSERT INTO topic_domain_coverage(topic_id, domain, article_count, avg_rank)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (topic_id, domain) DO UPDATE
+            SET article_count = EXCLUDED.article_count,
+                avg_rank = EXCLUDED.avg_rank
+            RETURNING topic_id, domain, article_count, avg_rank;
+            """,
+            (normalized_topic_id, normalized_domain, normalized_count, normalized_avg_rank),
+            fetchone=True,
+        )
+        if row:
+            return row
+
+        memory_existing = next(
+            (
+                cov
+                for cov in self._memory["topic_domain_coverage"]
+                if cov.get("topic_id") == normalized_topic_id and cov.get("domain") == normalized_domain
+            ),
+            None,
+        )
+        if memory_existing:
+            memory_existing["article_count"] = normalized_count
+            memory_existing["avg_rank"] = normalized_avg_rank
+            return memory_existing
+        payload = {
+            "topic_id": normalized_topic_id,
+            "domain": normalized_domain,
+            "article_count": normalized_count,
+            "avg_rank": normalized_avg_rank,
+        }
+        self._memory["topic_domain_coverage"].append(payload)
         return payload
 
     def fetch_articles(self):

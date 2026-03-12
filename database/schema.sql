@@ -76,9 +76,35 @@ CREATE TABLE IF NOT EXISTS cluster_articles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Topic relationships (knowledge graph edges)
+CREATE TABLE IF NOT EXISTS topic_relationships (
+    id BIGSERIAL PRIMARY KEY,
+    topic_id UUID REFERENCES topics(id),
+    related_topic_id UUID REFERENCES topics(id),
+    weight FLOAT,
+    relationship_type TEXT
+);
+
+-- Topic coverage by domain
+CREATE TABLE IF NOT EXISTS topic_domain_coverage (
+    topic_id UUID REFERENCES topics(id),
+    domain TEXT,
+    article_count INT,
+    avg_rank FLOAT,
+    PRIMARY KEY (topic_id, domain)
+);
+
 -- Indexes for performance and idempotency
 CREATE INDEX IF NOT EXISTS idx_articles_url ON articles(url);
 CREATE INDEX IF NOT EXISTS idx_keywords_keyword ON keywords(keyword);
 CREATE INDEX IF NOT EXISTS idx_paa_questions_question ON paa_questions(question);
 CREATE INDEX IF NOT EXISTS idx_topics_name ON topics(name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cluster_articles_cluster_article ON cluster_articles(cluster_id, article_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_relationship_unique
+    ON topic_relationships(topic_id, related_topic_id, relationship_type);
+CREATE INDEX IF NOT EXISTS idx_topic_relationship_topic
+    ON topic_relationships(topic_id);
+CREATE INDEX IF NOT EXISTS idx_topic_relationship_related
+    ON topic_relationships(related_topic_id);
+CREATE INDEX IF NOT EXISTS idx_topic_coverage_domain
+    ON topic_domain_coverage(domain);
