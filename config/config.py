@@ -94,7 +94,9 @@ class GCPSecretSource(PydanticBaseSettingsSource):
             from google.cloud import secretmanager
             client = secretmanager.SecretManagerServiceClient()
             name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-            response = client.access_secret_version(request={"name": name})
+            # Set a 0.2-second timeout to avoid hanging the app on local dev machines
+            # In local dev, we almost always rely on .env anyway.
+            response = client.access_secret_version(request={"name": name}, timeout=0.2)
             val = response.payload.data.decode("UTF-8")
             return val, field_name, True
         except Exception as exc:
@@ -122,8 +124,9 @@ class StrictSourceFilter(PydanticBaseSettingsSource):
         data = self.base_source()
         project_id = os.getenv("GCP_PROJECT_ID")
         
-        # If no project ID, act as a transparent proxy (standard local behavior)
-        if not project_id:
+        # Strict mode only applies if explicitly enabled via GCP_STRICT_MODE env var.
+        # This allows local development with GCP Pub/Sub using .env secrets.
+        if not os.getenv("GCP_STRICT_MODE", "").lower() in ("true", "1", "yes"):
             return data
         
         filtered = {}

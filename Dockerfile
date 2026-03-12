@@ -41,5 +41,5 @@ COPY --from=builder /root/.local /home/contentog/.local
 COPY --chown=contentog:contentog . .
 
 # Entrypoint for Cloud Run
-ENTRYPOINT ["python", "scripts/run_worker.py"]
-CMD ["--mode", "worker"]
+EXPOSE 8080
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS article_topics (
     article_id UUID REFERENCES articles(id),
     topic_id UUID REFERENCES topics(id),
     relevance_score FLOAT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     PRIMARY KEY (article_id, topic_id)
 );
 
@@ -98,6 +99,8 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     completed_at TIMESTAMP WITH TIME ZONE,
     keyword_count INT DEFAULT 0,
+    article_count INT DEFAULT 0,
+    cluster_count INT DEFAULT 0,
     error_summary TEXT,
     metadata JSONB
 );
@@ -112,7 +115,8 @@ CREATE TABLE IF NOT EXISTS keyword_tasks (
     completed_at TIMESTAMP WITH TIME ZONE,
     error_message TEXT,
     retry_count INT DEFAULT 0,
-    metadata JSONB
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Performance Indexes

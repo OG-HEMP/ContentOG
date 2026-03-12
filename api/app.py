@@ -3,7 +3,9 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 from fastapi import FastAPI, HTTPException
 
+from pydantic import BaseModel
 from database.db_client import db_client
+from scripts.orchestrator import Orchestrator
 
 app = FastAPI(title="ContentOG API")
 
@@ -49,6 +51,46 @@ def list_runs() -> List[Dict[str, Any]]:
         ORDER BY started_at DESC
         LIMIT 50;
         """
+    )
+    return rows
+
+
+class RunCreate(BaseModel):
+    keywords: List[str]
+
+
+@app.post("/runs")
+def create_run(request: RunCreate) -> Dict[str, Any]:
+    if not request.keywords:
+        raise HTTPException(status_code=400, detail="Keywords list cannot be empty")
+
+    orch = Orchestrator()
+    run_id = orch.create_run(mode="ui-trigger", keyword_count=len(request.keywords))
+
+    try:
+        orch.publish_tasks(run_id, request.keywords)
+        # For simplicity in this demo/UI flow, we mark the run as 'dispatched' 
+        # but the workers will update it as they finish if we had full status tracking.
+        # Actually Orchestrator.complete_run marks it as 'completed'.
+        # Let's just return the run_id.
+        return {"run_id": run_id, "status": "dispatched", "keywords": request.keywords}
+    except Exception as exc:
+        orch.complete_run(run_id, status="failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=f"Failed to dispatch tasks: {exc}")
+
+
+@app.get("/runs/{run_id}/tasks")
+def get_run_tasks(run_id: str) -> List[Dict[str, Any]]:
+    if not _table_exists("public.keyword_tasks"):
+        return []
+    rows = _query_rows(
+        """
+        SELECT id, keyword, status, started_at, completed_at, error_message
+        FROM keyword_tasks
+        WHERE run_id = %s
+        ORDER BY created_at ASC;
+        """,
+        (run_id,)
     )
     return rows
 

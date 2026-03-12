@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { useRun } from '@/components/RunContext';
 
@@ -73,8 +74,12 @@ export default function TopicPanel() {
             </div>
           )}
           <div className="flex gap-2">
-            <button className="rounded bg-indigo-600 px-3 py-1">Generate Pillar</button>
-            <button className="rounded bg-slate-700 px-3 py-1">Open Coverage Matrix</button>
+            <Link href="/pillar-builder" className="rounded bg-indigo-600 px-3 py-1 text-center text-white hover:bg-indigo-700">
+              Generate Pillar
+            </Link>
+            <Link href="/coverage-matrix" className="rounded bg-slate-700 px-3 py-1 text-center text-white hover:bg-slate-800">
+              Open Coverage Matrix
+            </Link>
           </div>
         </div>
       )}

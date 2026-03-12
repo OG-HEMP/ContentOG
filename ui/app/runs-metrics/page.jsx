@@ -3,7 +3,7 @@
 import { useApiData } from '@/hooks/useApiData';
 
 export default function RunsMetricsPage() {
-  const { data, loading, error } = useApiData('/runs');
+  const { data, loading, error } = useApiData('/runs', null, { refreshInterval: 10000 });
 
   return (
     <section className="panel p-4">

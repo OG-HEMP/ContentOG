@@ -1,19 +1,31 @@
 steps:
-  # 1. Build the container image
+  # 1. Build the Backend image (used for API and Worker)
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA', '.']
+    args: ['build', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA', '.', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest']
 
-  # 2. Push the image to Artifact Registry
+  # 2. Build the UI image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA']
+    args: ['build', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA', './ui', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest']
+
+  # 3. Push both images
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest']
 
 images:
-  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA'
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA'
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest'
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA'
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest'
 
 substitutions:
   _AR_HOSTNAME: 'us-central1-docker.pkg.dev'
   _AR_REPO_NAME: 'contentog'
-  _SERVICE_NAME: 'worker'
 
 options:
   logging: CLOUD_LOGGING_ONLY

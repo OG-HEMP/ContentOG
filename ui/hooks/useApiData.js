@@ -3,33 +3,48 @@
 import { useEffect, useState } from 'react';
 import { apiGet } from '@/lib/api';
 
-export function useApiData(path, runId, deps = []) {
+export function useApiData(path, runId, { deps = [], refreshInterval = null } = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let controller = new AbortController();
+    let timer = null;
 
-    async function load() {
-      setLoading(true);
-      setError(null);
+    async function load(isManual = true) {
+      if (isManual) {
+        setLoading(true);
+        setError(null);
+      }
+      
       try {
         const result = await apiGet(path, { runId, signal: controller.signal });
         setData(result);
+        
+        if (refreshInterval && !controller.signal.aborted) {
+          timer = setTimeout(() => load(false), refreshInterval);
+        }
       } catch (err) {
         if (err.name !== 'AbortError') {
           setError(err);
           setData(null);
         }
       } finally {
-        setLoading(false);
+        if (isManual) setLoading(false);
       }
     }
 
     load();
-    return () => controller.abort();
-  }, [path, runId, ...deps]);
+    
+    return () => {
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [path, runId, version, refreshInterval, ...deps]);
 
-  return { data, loading, error };
+  const refresh = () => setVersion((v) => v + 1);
+
+  return { data, loading, error, refresh };
 }

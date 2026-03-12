@@ -5,7 +5,7 @@ import { useApiData } from '@/hooks/useApiData';
 
 export default function PillarBuilderPage() {
   const { runId } = useRun();
-  const { data, loading, error } = useApiData('/strategies', runId);
+  const { data, loading, error } = useApiData('/strategies', runId, { deps: [runId] });
 
   return (
     <section className="panel p-4">

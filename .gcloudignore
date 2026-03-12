@@ -1,0 +1,41 @@
+# Exclude large repositories and local development artifacts
+repos/
+.venv/
+env/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+
+# DO NOT exclude lib/ globally as it's used in the UI
+# lib/ 
+
+# Exclude OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Exclude VS Code
+.vscode/
+*.code-workspace
+
+# Exclude frontend build artifacts but INCLUDE ui/lib
+ui/node_modules/
+ui/.next/
+
+# Exclude secrets
+.env
+.env.local

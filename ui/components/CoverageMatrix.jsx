@@ -12,7 +12,7 @@ function gapColor(score) {
 
 export default function CoverageMatrix() {
   const { runId } = useRun();
-  const { data, loading, error } = useApiData('/coverage', runId);
+  const { data, loading, error } = useApiData('/coverage', runId, { deps: [runId] });
   const [sortBy, setSortBy] = useState('gap_score');
 
   const rows = useMemo(() => {
