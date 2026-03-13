@@ -15,9 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
-COPY . .
+# First copy only requirements to leverage Docker cache
+COPY requirements.txt .
 RUN pip install --no-cache-dir --user --upgrade pip setuptools wheel Cython
 RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Now copy the rest of the code
+COPY . .
 
 # --- Production Stage ---
 FROM python:3.12-slim
