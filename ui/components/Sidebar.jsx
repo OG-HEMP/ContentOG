@@ -5,10 +5,10 @@ import { usePathname } from 'next/navigation';
 
 const links = [
   { label: 'Dashboard', href: '/', icon: '📊' },
+  { label: 'Article Explorer', href: '/article-explorer', icon: '🔍' },
   { label: 'Topic Universe', href: '/topic-universe', icon: '🌐' },
   { label: 'Coverage Matrix', href: '/coverage-matrix', icon: '🗺️' },
   { label: 'Pillar Builder', href: '/pillar-builder', icon: '🧱' },
-  { label: 'Article Explorer', href: '/article-explorer', icon: '🔍' },
   { label: 'Runs & Metrics', href: '/runs-metrics', icon: '📈' }
 ];
 

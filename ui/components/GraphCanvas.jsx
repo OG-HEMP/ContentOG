@@ -15,7 +15,8 @@ function parseCoordinate(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function nodeColor(topicCoverage) {
+function nodeColor(topicCoverage, nodeType) {
+  if (nodeType === 'keyword') return '#6366f1'; // Indigo for anchors
   if (topicCoverage === 'your') return '#22c55e';
   if (topicCoverage === 'competitor') return '#ef4444';
   return '#3b82f6';
@@ -51,12 +52,13 @@ export default function GraphCanvas() {
     if (loading || error || !graphData || !containerRef.current) return;
     cleanup();
 
-    const rawCoverage = coverageData && typeof coverageData === 'object' ? coverageData : {};
+    const targetDomain = currentRun?.target_domain?.toLowerCase() || 'contentog.com';
+
     coverageMap.current = Object.entries(rawCoverage).reduce((acc, [topicId, data]) => {
       const sorted = [...(data || [])].sort((a, b) => (b.article_count || 0) - (a.article_count || 0));
       if (!sorted.length) {
         acc[topicId] = 'mixed';
-      } else if (sorted[0]?.domain?.includes('you')) {
+      } else if (sorted[0]?.domain?.toLowerCase().includes(targetDomain)) {
         acc[topicId] = 'your';
       } else if (sorted.length > 1 && sorted[0].article_count === sorted[1].article_count) {
         acc[topicId] = 'mixed';
@@ -79,13 +81,17 @@ export default function GraphCanvas() {
       const x = parseCoordinate(node.x) ?? Math.cos(fallbackAngle);
       const y = parseCoordinate(node.y) ?? Math.sin(fallbackAngle);
 
+      const isKeyword = node.type === 'keyword';
+      const size = isKeyword ? 10 : (node.size || 4);
+
       // use mergeNode to prevent crash on duplicate IDs
       graph.mergeNode(nodeId, {
-        label: node.topic_name || node.label || `Topic ${nodeId.slice(0, 4)}`,
-        size: node.size || 4,
-        color: nodeColor(coverageMap.current[nodeId]),
+        label: node.topic_name || node.label || node.name || `Topic ${nodeId.slice(0, 4)}`,
+        size: size,
+        color: nodeColor(coverageMap.current[nodeId], node.type),
         x,
-        y
+        y,
+        type: node.type
       });
     });
 
@@ -149,11 +155,12 @@ export default function GraphCanvas() {
             id="edge-threshold"
             type="range"
             min="0"
-            max="10"
+            max="1"
+            step="0.05"
             value={edgeThreshold}
             onChange={(event) => setEdgeThreshold(Number(event.target.value))}
           />
-          <span>{edgeThreshold}</span>
+          <span>{edgeThreshold.toFixed(2)}</span>
         </div>
         {loading && <p className="text-sm text-slate-400">Loading graph data...</p>}
         {error && <p className="text-sm text-red-300">API unavailable</p>}

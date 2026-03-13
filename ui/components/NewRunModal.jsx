@@ -5,6 +5,7 @@ import { apiPost } from '@/lib/api';
 
 export default function NewRunModal({ onClose, onRunStarted }) {
   const [keywords, setKeywords] = useState('');
+  const [targetDomain, setTargetDomain] = useState('contentog.com');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -24,7 +25,10 @@ export default function NewRunModal({ onClose, onRunStarted }) {
     setError(null);
 
     try {
-      const result = await apiPost('/runs', { keywords: keywordList });
+      const result = await apiPost('/runs', { 
+        keywords: keywordList,
+        target_domain: targetDomain.trim() || null 
+      });
       onRunStarted(result.run_id);
       onClose();
     } catch (err) {
@@ -39,7 +43,7 @@ export default function NewRunModal({ onClose, onRunStarted }) {
       <div className="w-full max-w-md overflow-hidden rounded-xl border border-slate-700 bg-slate-900/90 shadow-2xl animate-in fade-in zoom-in duration-200">
         <div className="border-b border-slate-700 p-4">
           <h2 className="text-xl font-bold text-white">Start New Discovery</h2>
-          <p className="text-sm text-slate-400">Enter seed keywords to begin topic extraction</p>
+          <p className="text-sm text-slate-400">Enter seed keywords and your target domain</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4">
@@ -48,10 +52,23 @@ export default function NewRunModal({ onClose, onRunStarted }) {
               Keywords (One per line)
             </label>
             <textarea
-              className="h-32 w-full rounded-lg border border-slate-700 bg-slate-800 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="h-24 w-full rounded-lg border border-slate-700 bg-slate-800 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               placeholder="e.g. content marketing&#10;topic clusters&#10;SEO strategy"
               value={keywords}
               onChange={(e) => setKeywords(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="mb-2 block text-sm font-medium text-slate-300">
+              Your Target Domain
+            </label>
+            <input
+              className="w-full rounded-lg border border-slate-700 bg-slate-800 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="e.g. contentog.com"
+              value={targetDomain}
+              onChange={(e) => setTargetDomain(e.target.value)}
               disabled={loading}
             />
           </div>

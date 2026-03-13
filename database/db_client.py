@@ -185,45 +185,6 @@ class DBClient:
         self._memory["articles"].append(payload)
         return payload
 
-    def update_article_embedding(self, article_id: Optional[str], embedding: List[float], url: Optional[str] = None):
-        if not embedding:
-            raise ValueError("Embedding vector cannot be empty.")
-
-        vector_literal = self._vector_literal(embedding)
-        row = None
-        if article_id:
-            row = self._execute(
-                """
-                UPDATE articles
-                SET embedding = %s::vector,
-                    updated_at = NOW()
-                WHERE id = %s
-                RETURNING id, url;
-                """,
-                (vector_literal, article_id),
-                fetchone=True,
-            )
-
-        if row is None and url:
-            row = self._execute(
-                """
-                UPDATE articles
-                SET embedding = %s::vector,
-                    updated_at = NOW()
-                WHERE url = %s
-                RETURNING id, url;
-                """,
-                (vector_literal, url),
-                fetchone=True,
-            )
-
-        if row:
-            return row
-
-        # In-memory mode
-        target = None
-        if article_id:
-            target = next((a for a in self._memory["articles"] if a.get("id") == article_id), None)
         if target is None and url:
             target = next((a for a in self._memory["articles"] if a.get("url") == url), None)
         if target is None:

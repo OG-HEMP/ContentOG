@@ -96,7 +96,7 @@ def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optio
                     orch.update_task(task_id, "failed", str(exc))
                 raise exc
 
-def _run_global_analysis(run_id: str, context_list: List[Dict[str, Any]] = None):
+def _run_global_analysis(run_id: str, context_list: List[Dict[str, Any]] = None, target_domain: Optional[str] = None):
     """Run global steps like clustering and strategy generation for a run."""
     from scripts.orchestrator import Orchestrator
     orch = Orchestrator()
@@ -104,8 +104,8 @@ def _run_global_analysis(run_id: str, context_list: List[Dict[str, Any]] = None)
     logger.info(f"Starting global analysis for run: {run_id}")
     
     # Ideally we'd aggregate context here, but agents usually pull from DB using run_id
-    # We pass a generic context that includes the run_id
-    global_context = {"run_id": run_id}
+    # We pass a generic context that includes the run_id and target_domain
+    global_context = {"run_id": run_id, "target_domain": target_domain}
     
     try:
         logger.info("Analyzing topic clusters...")

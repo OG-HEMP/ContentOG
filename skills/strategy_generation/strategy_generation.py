@@ -78,16 +78,39 @@ def _topic_coverage_by_domain(topic_records: List[Dict[str, object]]) -> List[Di
     return coverage
 
 
-def _industry_topic_graph(topic_records: List[Dict[str, object]]) -> Dict[str, List[Dict[str, object]]]:
+def _industry_topic_graph(topic_records: List[Dict[str, object]], keyword_to_cluster: Dict[str, int] = None) -> Dict[str, List[Dict[str, object]]]:
     nodes = [
         {
             "id": str(record.get("topic_id", "")),
             "name": str(record.get("topic", "")),
             "cluster_id": str(record.get("cluster_id", "")),
             "article_count": int(len(record.get("linked_articles", []))),
+            "type": "topic",
         }
         for record in topic_records
     ]
+
+    # Add Keyword Anchor Nodes
+    edges: List[Dict[str, object]] = []
+    if keyword_to_cluster:
+        for kw, cluster_id in keyword_to_cluster.items():
+            kw_node_id = f"kw_{kw.replace(' ', '_')}"
+            nodes.append({
+                "id": kw_node_id,
+                "name": kw.upper(),
+                "type": "keyword",
+                "size": 10, # Larger for anchors
+            })
+            
+            # Find the topic that matches this cluster
+            matching_topic = next((r for r in topic_records if str(r.get("cluster_id")) == str(cluster_id)), None)
+            if matching_topic:
+                edges.append({
+                    "source": kw_node_id,
+                    "target": str(matching_topic["topic_id"]),
+                    "strength": 1.0,
+                    "relationship_type": "keyword_anchor"
+                })
 
     topic_domains = []
     for record in topic_records:
@@ -98,7 +121,6 @@ def _industry_topic_graph(topic_records: List[Dict[str, object]]) -> Dict[str, L
         }
         topic_domains.append({domain for domain in domains if domain})
 
-    edges: List[Dict[str, object]] = []
     for idx in range(len(topic_records)):
         for jdx in range(idx + 1, len(topic_records)):
             overlap = topic_domains[idx].intersection(topic_domains[jdx])
@@ -113,6 +135,7 @@ def _industry_topic_graph(topic_records: List[Dict[str, object]]) -> Dict[str, L
                     "shared_domains": sorted(overlap),
                     "shared_domain_count": len(overlap),
                     "strength": round(strength, 4),
+                    "type": "domain_overlap"
                 }
             )
     return {"nodes": nodes, "edges": edges}
@@ -203,6 +226,7 @@ def generate_strategy(
     topics: List[Dict[str, str]],
     clustered_articles: Dict[int, List[Dict[str, str]]],
     paa_questions: List[str],
+    target_domain: Optional[str] = None,
 ) -> Dict[str, object]:
     pillar_pages = []
     cluster_topics = []
@@ -260,9 +284,15 @@ def generate_strategy(
 
     _persist_topic_graph_fallback(topic_records)
 
+    # NEW: Centroid-based semantic similarity for better clustering in Graph Universe
+    _add_semantic_centroid_edges(topic_records)
+
     logger.info("Generated strategy for %d topics", len(topics))
     coverage_by_domain = _topic_coverage_by_domain(topic_records)
-    topic_graph = _industry_topic_graph(topic_records)
+    
+    # NEW: Include keyword anchors in the graph
+    keyword_to_cluster = getattr(topics[0], "keyword_to_cluster", {}) if topics else {}
+    topic_graph = _industry_topic_graph(topic_records, keyword_to_cluster)
 
     for edge in topic_graph.get("edges", []):
         source_topic_id = str(edge.get("source", "")).strip()
@@ -318,3 +348,43 @@ def generate_strategy(
         "topic_coverage_by_domain": coverage_by_domain,
         "industry_topic_graph": topic_graph,
     }
+def _add_semantic_centroid_edges(topic_records: List[Dict[str, object]]):
+    """Add edges based on cosine similarity of topic centroids."""
+    if len(topic_records) < 2:
+        return
+
+    # 1. Get centroids for each topic
+    topic_centroids = {}
+    for record in topic_records:
+        linked_articles = record.get("linked_articles", [])
+        article_ids = [str(a.get("article_id")) for a in linked_articles if a.get("article_id")]
+        
+        if not article_ids:
+            continue
+            
+        embeddings = db_client.fetch_articles_with_embeddings(article_ids=article_ids)
+        if embeddings:
+            # Average the embeddings to get the centroid
+            vectors = [e.get("embedding") for e in embeddings if e.get("embedding")]
+            if vectors:
+                centroid = [sum(col) / len(vectors) for col in zip(*vectors)]
+                topic_centroids[record["topic_id"]] = centroid
+
+    # 2. Compare centroids and add semantic edges
+    tids = list(topic_centroids.keys())
+    for i in range(len(tids)):
+        for j in range(i + 1, len(tids)):
+            id_a, id_b = tids[i], tids[j]
+            vec_a, vec_b = topic_centroids[id_a], topic_centroids[id_b]
+            
+            # Simple dot product as they are likely normalized from OpenAI
+            dot = sum(a * b for a, b in zip(vec_a, vec_b))
+            
+            if dot > 0.85: # High semantic similarity threshold
+                db_client.save_topic_relationship(
+                    topic_id=id_a,
+                    related_topic_id=id_b,
+                    weight=round(float(dot), 4),
+                    relationship_type="semantic_centroid_similarity",
+                )
+                logger.info(f"Added semantic edge between {id_a} and {id_b} (score: {dot:.4f})")

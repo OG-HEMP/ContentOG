@@ -8,6 +8,16 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingAgent:
     def run(self, context):
+        # 1. Embed seed keywords if provided (anchors for clustering)
+        seed_keywords = context.get("keywords") or [context.get("keyword")]
+        if seed_keywords:
+            for kw in seed_keywords:
+                if not kw: continue
+                kw_vector = generate_embedding(kw)
+                db_client.update_keyword_embedding(kw, kw_vector)
+            logger.info("Generated embeddings for %d seed keywords", len(seed_keywords))
+
+        # 2. Embed articles
         articles = context.get("articles", [])
         vectors = []
         embedded_ids = []

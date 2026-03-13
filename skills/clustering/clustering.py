@@ -18,17 +18,34 @@ def _cosine_distance(vec_a: List[float], vec_b: List[float]) -> float:
     return 1.0 - similarity
 
 
-def _build_weighted_distance_matrix(embeddings: List[List[float]], keywords: List[str]) -> List[List[float]]:
+def _build_weighted_distance_matrix(embeddings: List[List[float]], metadata: List[dict]) -> List[List[float]]:
     size = len(embeddings)
     matrix = [[0.0 for _ in range(size)] for _ in range(size)]
+    
     for i in range(size):
         for j in range(i + 1, size):
-            base_distance = _cosine_distance(embeddings[i], embeddings[j])
-            distance = base_distance * 0.8
-            if keywords[i] and keywords[i] == keywords[j]:
-                distance *= 0.5
-            matrix[i][j] = distance
-            matrix[j][i] = distance
+            # Base cosine distance
+            dist = _cosine_distance(embeddings[i], embeddings[j])
+            
+            # Anchoring Logic:
+            # If one is an anchor (keyword) and the other is an article:
+            # We want to pull articles TOWARDS their keyword if they are semantically similar.
+            type_i = metadata[i].get("type", "article")
+            type_j = metadata[j].get("type", "article")
+            kw_i = str(metadata[i].get("keyword", "")).strip().lower()
+            kw_j = str(metadata[j].get("keyword", "")).strip().lower()
+
+            # If they share the same keyword, reduce distance (pull them together)
+            if kw_i and kw_i == kw_j:
+                dist *= 0.4 # Strong pull for same keyword
+            
+            # If one is a keyword anchor and the other is an article for that keyword
+            if (type_i == "keyword" and type_j == "article" and kw_i == kw_j) or \
+               (type_j == "keyword" and type_i == "article" and kw_i == kw_j):
+                dist *= 0.25 # Even stronger pull to anchor
+
+            matrix[i][j] = dist
+            matrix[j][i] = dist
     return matrix
 
 
@@ -41,8 +58,7 @@ def cluster_embeddings(embeddings: List[List[float]], articles: List[dict]) -> D
     else:
         normalized_articles = normalized_articles[: len(embeddings)]
 
-    keywords = [str((article or {}).get("keyword", "")).strip().lower() for article in normalized_articles]
-    distance_matrix = _build_weighted_distance_matrix(embeddings, keywords)
+    distance_matrix = _build_weighted_distance_matrix(embeddings, normalized_articles)
 
     article_ids = [str((article or {}).get("article_id") or idx) for idx, article in enumerate(normalized_articles)]
     try:

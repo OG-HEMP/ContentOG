@@ -11,20 +11,48 @@ function gapColor(score) {
 }
 
 export default function CoverageMatrix() {
-  const { runId } = useRun();
-  const { data, loading, error } = useApiData('/coverage', runId, { deps: [runId] });
+  const { topics, runId, currentRun } = useRun();
+  const { data, loading: apiLoading, error: apiError } = useApiData('/coverage', runId, { deps: [runId] });
   const [sortBy, setSortBy] = useState('gap_score');
-  const [userDomain, setUserDomain] = useState('contentog.com');
+  const [yourDomain, setYourDomain] = useState('contentog.com');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Pre-fill from run metadata if available
+  useEffect(() => {
+    if (currentRun?.target_domain) {
+      setYourDomain(currentRun.target_domain);
+    }
+  }, [currentRun]);
+
+  const handleCalculateGap = async (e) => {
+    if (e) e.preventDefault();
+    if (!yourDomain) return;
+    
+    setLoading(true);
+    setError(null);
+    try {
+      // Future: Trigger a dedicated gap analysis endpoint if needed
+      // For now, we rely on the pre-calculated coverage in the topics
+      console.log('Calculating gap for:', yourDomain);
+      // Simulate API call delay for UX
+      await new Promise(r => setTimeout(r, 800));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const rows = useMemo(() => {
     if (!data || typeof data !== 'object') return [];
     
     return Object.entries(data).map(([topicId, stats]) => {
       const topicName = stats[0]?.topic_name || `Topic ${topicId.slice(0, 4)}`;
-      const yourDomain = stats.find(s => s.domain.toLowerCase().includes(userDomain.toLowerCase())) || {};
-      const competitors = stats.filter(s => !s.domain.toLowerCase().includes(userDomain.toLowerCase()));
+      const yourDomainStats = stats.find(s => s.domain.toLowerCase().includes(yourDomain.toLowerCase())) || {};
+      const competitors = stats.filter(s => !s.domain.toLowerCase().includes(yourDomain.toLowerCase()));
       
-      const yourCount = yourDomain.article_count || 0;
+      const yourCount = yourDomainStats.article_count || 0;
       const competitorAvg = competitors.length > 0 
         ? competitors.reduce((acc, c) => acc + (c.article_count || 0), 0) / competitors.length 
         : 0;
@@ -42,30 +70,47 @@ export default function CoverageMatrix() {
         gap_score: gapScore
       };
     }).sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
-  }, [data, sortBy, userDomain]);
+  }, [data, sortBy, yourDomain]);
 
   return (
     <section className="panel p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-lg font-semibold">Coverage Matrix</h2>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Your Domain:</span>
-            <input 
-              className="rounded bg-slate-800 px-2 py-1 text-xs border border-slate-700 focus:border-indigo-500 outline-none"
-              value={userDomain}
-              onChange={(e) => setUserDomain(e.target.value)}
-              placeholder="e.g. contentog.com"
-            />
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <label className="mb-2 block text-sm font-medium text-slate-400">Your Domain</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 p-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  placeholder="e.g. contentog.com"
+                  value={yourDomain}
+                  onChange={(e) => setYourDomain(e.target.value)}
+                  disabled={loading}
+                />
+                <button
+                  onClick={handleCalculateGap}
+                  disabled={loading || !yourDomain}
+                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  ) : 'Submit'}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
+              <select className="rounded bg-slate-800 px-2 py-1 text-sm border border-slate-700" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="gap_score">Sort by Gap Score</option>
+                <option value="your_domain_count">Sort by Your Domain</option>
+              </select>
+            </div>
           </div>
-          <select className="rounded bg-slate-800 px-2 py-1 text-sm border border-slate-700" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="gap_score">Sort by Gap Score</option>
-            <option value="your_domain_count">Sort by Your Domain</option>
-          </select>
         </div>
       </div>
-      {loading && <p className="animate-pulse text-sm text-slate-400">Calculating coverage...</p>}
-      {error && <p className="text-red-300">API unavailable</p>}
+      {(apiLoading || loading) && <p className="animate-pulse text-sm text-slate-400">Calculating coverage...</p>}
+      {(apiError || error) && <p className="text-red-300">API unavailable</p>}
       <div className="overflow-auto">
         <table className="w-full text-sm">
           <thead>

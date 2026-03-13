@@ -11,6 +11,7 @@ class StrategyAgent:
             context.get("topics", []),
             context.get("clustered_articles", {}),
             context.get("paa_questions", []),
+            target_domain=context.get("target_domain"),
         )
         context["strategy"] = strategy
         logger.info("Generated strategy artifacts for %d topics", len(context.get("topics", [])))

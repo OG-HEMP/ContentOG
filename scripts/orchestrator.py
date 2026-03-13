@@ -21,18 +21,19 @@ class Orchestrator:
     def __repr__(self) -> str:
         return f"<Orchestrator(project_id='{self.project_id}', topic='{self.topic_id}')>"
 
-    def create_run(self, mode: str, keyword_count: int) -> str:
+    def create_run(self, mode: str, keyword_count: int, target_domain: Optional[str] = None) -> str:
         """Create a new run record in the database."""
         run_id = str(uuid.uuid4())
         try:
+            metadata = {"target_domain": target_domain} if target_domain else {}
             self.db._execute(
                 """
-                INSERT INTO runs (id, mode, keyword_count, status, started_at)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO runs (id, mode, keyword_count, status, started_at, target_domain, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (run_id, mode, keyword_count, "running", datetime.utcnow().isoformat())
+                (run_id, mode, keyword_count, "running", datetime.utcnow().isoformat(), target_domain, json.dumps(metadata))
             )
-            logger.info("Created run %s for mode %s", run_id, mode)
+            logger.info("Created run %s for mode %s (Target Domain: %s)", run_id, mode, target_domain)
             return run_id
         except Exception as exc:
             logger.error("Failed to create run record: %s", exc)

@@ -48,7 +48,7 @@ def list_runs() -> List[Dict[str, Any]]:
         return []
     rows = _query_rows(
         """
-        SELECT id, started_at, completed_at, status, keyword_count, article_count, cluster_count
+        SELECT id, started_at, completed_at, status, keyword_count, article_count, cluster_count, target_domain
         FROM runs
         ORDER BY started_at DESC
         LIMIT 50;
@@ -59,11 +59,12 @@ def list_runs() -> List[Dict[str, Any]]:
 
 class RunCreate(BaseModel):
     keywords: List[str]
+    target_domain: Optional[str] = None
 
 
 from fastapi import BackgroundTasks
 
-def run_pipeline_task(run_id: str, keywords: List[str]):
+def run_pipeline_task(run_id: str, keywords: List[str], target_domain: Optional[str] = None):
     from scripts.run_pipeline import _run_single_keyword, _run_global_analysis
     from scripts.orchestrator import Orchestrator
     import logging
@@ -102,7 +103,7 @@ def run_pipeline_task(run_id: str, keywords: List[str]):
         # Phase 2: Global analysis (Clustering, Topics, Strategy)
         if success_count > 0:
             logger.info(f"Research complete ({success_count}/{len(keywords)}). Starting global analysis...")
-            _run_global_analysis(run_id)
+            _run_global_analysis(run_id, target_domain=target_domain)
         
         orch.complete_run(run_id)
     except Exception as exc:
@@ -131,7 +132,10 @@ def retry_task(task_id: str, background_tasks: BackgroundTasks) -> Dict[str, str
             _run_single_keyword(keyword, task_id, orch)
             # Re-run global analysis to update the artifacts for this run
             logger.info(f"Manual retry SUCCESS for {keyword}. Refreshing global analysis for run {run_id}")
-            _run_global_analysis(run_id)
+            # Fetch target_domain from run metadata if possible
+            run_info = _query_rows("SELECT metadata FROM runs WHERE id = %s", (run_id,))
+            target_domain = run_info[0]["metadata"].get("target_domain") if run_info and run_info[0].get("metadata") else None
+            _run_global_analysis(run_id, target_domain=target_domain)
         except Exception as e:
             logger.error(f"Manual retry FAILURE for {keyword}: {e}")
             pass # Already updated in DB by _run_single_keyword
@@ -152,13 +156,13 @@ def create_run(request: RunCreate, background_tasks: BackgroundTasks) -> Dict[st
         raise HTTPException(status_code=400, detail="Keywords list cannot be empty")
 
     orch = Orchestrator()
-    run_id = orch.create_run(mode="ui-trigger", keyword_count=len(request.keywords))
+    run_id = orch.create_run(mode="ui-trigger", keyword_count=len(request.keywords), target_domain=request.target_domain)
 
     try:
         # Schedule the long-running task to run in the background
-        background_tasks.add_task(run_pipeline_task, run_id, request.keywords)
+        background_tasks.add_task(run_pipeline_task, run_id, request.keywords, request.target_domain)
         
-        return {"run_id": run_id, "status": "running", "keywords": request.keywords}
+        return {"run_id": run_id, "status": "running", "keywords": request.keywords, "target_domain": request.target_domain}
     except Exception as exc:
         orch.complete_run(run_id, status="failed", error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to dispatch tasks: {exc}")
