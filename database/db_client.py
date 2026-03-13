@@ -29,7 +29,12 @@ class DBClient:
 
     def connect(self):
         if self._conn is not None:
-            return self._conn
+            # Check if the connection is still alive
+            if not getattr(self._conn, "closed", True):
+                return self._conn
+            else:
+                self._conn = None
+        
         try:
             self._conn = get_db()
             return self._conn

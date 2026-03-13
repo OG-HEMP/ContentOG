@@ -31,13 +31,14 @@ cleanup_resources() {
     echo "🧹 Cleaning up failed/old resources..."
     
     # 1. Delete source tarballs from failed builds in GCS
-    FAILED_SOURCES=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.object)" --limit=10)
-    BUCKET=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.bucket)" --limit=1)
+    # We use -r to handle cases where there might be many or none
+    FAILED_SOURCES=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.object)" --limit=10 2>/dev/null || echo "")
+    BUCKET=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.bucket)" --limit=1 2>/dev/null || echo "")
     
     if [ -n "$FAILED_SOURCES" ] && [ -n "$BUCKET" ]; then
         for source in $FAILED_SOURCES; do
             echo "Deleting failed source: gs://$BUCKET/$source"
-            gsutil rm "gs://$BUCKET/$source" 2>/dev/null || true
+            gcloud storage rm "gs://$BUCKET/$source" 2>/dev/null || true
         done
     fi
 
@@ -45,10 +46,13 @@ cleanup_resources() {
     for service in "$API_SERVICE" "$UI_SERVICE"; do
         if gcloud run services describe "$service" --region "$REGION" >/dev/null 2>&1; then
             echo "Pruning old revisions for $service..."
+            # Get revisions, skip the first 5 (latest), and delete the rest
             OLD_REVISIONS=$(gcloud run revisions list --service "$service" --region "$REGION" --format='value(metadata.name)' --sort-by='~metadata.creationTimestamp' | tail -n +6)
             for rev in $OLD_REVISIONS; do
-                echo "Deleting revision: $rev"
-                gcloud run revisions delete "$rev" --region "$REGION" --quiet || true
+                if [ -n "$rev" ]; then
+                    echo "Deleting revision: $rev"
+                    gcloud run revisions delete "$rev" --region "$REGION" --quiet || true
+                fi
             done
         fi
     done
@@ -64,8 +68,9 @@ gcloud builds submit --config cloudbuild.yaml \
 
 # 2. Deploy API Service
 echo "🌐 Deploying Backend API to Cloud Run..."
-# Extract environment variables from .env for deployment
-ENV_VARS=$(grep -v '^#' .env | grep -v '^$' | xargs | tr ' ' ',')
+# Extract environment variables from .env for deployment, handling potential spaces
+# We filter out UI-specific local overrides
+ENV_VARS=$(grep -v '^#' .env | grep -v '^$' | grep -v 'BACKEND_API_URL' | paste -sd "," -)
 
 gcloud run deploy "$API_SERVICE" \
     --image "$BACKEND_IMAGE" \
