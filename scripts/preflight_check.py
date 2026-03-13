@@ -72,6 +72,7 @@ def _check_database_connectivity() -> None:
     conn = db_client.connect()
     if conn is None:
         raise RuntimeError("Supabase connection failed")
+    db_client.release(conn)
     logger.info("Supabase connection OK")
 
 

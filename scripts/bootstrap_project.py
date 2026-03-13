@@ -9,6 +9,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from config.config import settings
+from database.db_client import db_client
 
 # Configure structured logging (consistent with worker/preflight)
 logging.basicConfig(
@@ -25,13 +26,16 @@ def bootstrap() -> Dict[str, int]:
     if conn is None:
         raise RuntimeError("Live database connection is required for bootstrap.")
 
-    schema_path = ROOT_DIR / "database" / "schema.sql"
-    with open(schema_path, "r", encoding="utf-8") as schema_file:
-        schema_sql = schema_file.read()
-    with conn.cursor() as cur:
-        cur.execute(schema_sql)
-        conn.commit()
-    logger.info("Schema initialization complete")
+    try:
+        schema_path = ROOT_DIR / "database" / "schema.sql"
+        with open(schema_path, "r", encoding="utf-8") as schema_file:
+            schema_sql = schema_file.read()
+        with conn.cursor() as cur:
+            cur.execute(schema_sql)
+            conn.commit()
+        logger.info("Schema initialization complete")
+    finally:
+        db_client.release(conn)
 
     seed_path = ROOT_DIR / "data" / "seeds" / "seed_keywords.json"
     loaded = []

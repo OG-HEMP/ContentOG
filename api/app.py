@@ -28,6 +28,8 @@ def _query_rows(sql: str, params: Tuple[Any, ...] = ()) -> List[Dict[str, Any]]:
         except Exception:
             pass
         raise HTTPException(status_code=500, detail=f"Database query failed: {exc}") from exc
+    finally:
+        db_client.release(conn)
 
 
 def _table_exists(table_name: str) -> bool:
