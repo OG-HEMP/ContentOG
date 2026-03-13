@@ -5,6 +5,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 _MAX_ERROR_BODY_CHARS = 400
+_MAX_RESPONSE_SIZE = 2 * 1024 * 1024  # 2MB limit
 
 
 def _clip_error_text(text: str) -> str:
@@ -46,7 +47,10 @@ def request_json(
         request = Request(url, data=body, headers=request_headers, method=method)
         try:
             with urlopen(request, timeout=timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
+                content = response.read(_MAX_RESPONSE_SIZE + 1)
+                if len(content) > _MAX_RESPONSE_SIZE:
+                    raise RuntimeError(f"Response exceeds maximum allowed size of {_MAX_RESPONSE_SIZE} bytes")
+                return json.loads(content.decode("utf-8"))
         except HTTPError as exc:
             error_body = _clip_error_text(exc.read().decode("utf-8", errors="ignore"))
             last_error = (exc.code, f"{exc.code} {error_body}".strip())
@@ -95,7 +99,10 @@ def request_text(
         request = Request(url, data=body, headers=request_headers, method=method)
         try:
             with urlopen(request, timeout=timeout) as response:
-                return response.read().decode("utf-8", errors="ignore")
+                content = response.read(_MAX_RESPONSE_SIZE + 1)
+                if len(content) > _MAX_RESPONSE_SIZE:
+                    raise RuntimeError(f"Response exceeds maximum allowed size of {_MAX_RESPONSE_SIZE} bytes")
+                return content.decode("utf-8", errors="ignore")
         except HTTPError as exc:
             error_body = _clip_error_text(exc.read().decode("utf-8", errors="ignore"))
             last_error = (exc.code, f"{exc.code} {error_body}".strip())
