@@ -50,38 +50,76 @@ def _load_seed_keywords(default: str = _DEFAULT_KEYWORD, limit: Optional[int] = 
 
 
 def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optional[any] = None) -> Dict[str, object]:
-    context: Dict[str, object] = {"keyword": keyword}
+    max_retries = 2
+    last_exc = None
     
-    def update_progress(msg: str):
-        if task_id and orch:
-            orch.update_task(task_id, "running", msg)
-        logger.info(f"[{keyword}] {msg}")
-
-    update_progress("Finding SERP results...")
-    context = SerpAgent().run(context)
-    
-    update_progress("Extracting PAA questions...")
-    context = PaaAgent().run(context)
-    
-    update_progress("Scraping article content...")
-    context = CrawlAgent().run(context)
-    
-    update_progress("Generating embeddings...")
-    context = EmbeddingAgent().run(context)
-    
-    update_progress("Analyzing topic clusters...")
-    context = ClusterAgent().run(context)
-    
-    update_progress("Mapping semantic topics...")
-    context = TopicAgent().run(context)
-    
-    update_progress("Generating strategy insights...")
-    context = StrategyAgent().run(context)
-    
-    if task_id and orch:
-        orch.update_task(task_id, "completed", "Keyword analysis complete.")
+    for attempt in range(max_retries + 1):
+        context: Dict[str, object] = {"keyword": keyword}
         
-    return context
+        def update_progress(msg: str, status: str = "running"):
+            if task_id and orch:
+                orch.update_task(task_id, status, msg)
+            logger.info(f"[{keyword}] {msg}")
+
+        try:
+            if attempt > 0:
+                update_progress(f"Retrying (Attempt {attempt}/{max_retries})...")
+
+            update_progress("Finding SERP results...")
+            context = SerpAgent().run(context)
+            
+            update_progress("Extracting PAA questions...")
+            context = PaaAgent().run(context)
+            
+            update_progress("Scraping article content...")
+            context = CrawlAgent().run(context)
+            
+            update_progress("Generating embeddings...")
+            context = EmbeddingAgent().run(context)
+            
+            if task_id and orch:
+                orch.update_task(task_id, "completed", "Keyword research complete.")
+                
+            return context
+        except Exception as exc:
+            last_exc = exc
+            logger.error(f"Attempt {attempt} failed for keyword {keyword}: {exc}")
+            if attempt < max_retries:
+                # Small exponential backoff
+                import time
+                time.sleep(2 ** attempt)
+                continue
+            else:
+                if task_id and orch:
+                    orch.update_task(task_id, "failed", str(exc))
+                raise exc
+
+def _run_global_analysis(run_id: str, context_list: List[Dict[str, Any]] = None):
+    """Run global steps like clustering and strategy generation for a run."""
+    from scripts.orchestrator import Orchestrator
+    orch = Orchestrator()
+    
+    logger.info(f"Starting global analysis for run: {run_id}")
+    
+    # Ideally we'd aggregate context here, but agents usually pull from DB using run_id
+    # We pass a generic context that includes the run_id
+    global_context = {"run_id": run_id}
+    
+    try:
+        logger.info("Analyzing topic clusters...")
+        global_context = ClusterAgent().run(global_context)
+        
+        logger.info("Mapping semantic topics...")
+        global_context = TopicAgent().run(global_context)
+        
+        logger.info("Generating strategy insights...")
+        global_context = StrategyAgent().run(global_context)
+        
+        logger.info(f"Global analysis complete for run: {run_id}")
+        return global_context
+    except Exception as exc:
+        logger.error(f"Global analysis failed for run {run_id}: {exc}")
+        raise exc
 
 
 def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: Optional[int] = None, task_ids: Optional[Dict[str, str]] = None) -> Dict[str, object]:
@@ -94,42 +132,37 @@ def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: Optional[i
     selected_keywords = keywords or _load_seed_keywords(limit=limit)
     logger.info("Starting ContentOG discovery pipeline for %d keyword(s)", len(selected_keywords))
 
-    runs: List[Dict[str, object]] = []
+    runs_data: List[Dict[str, object]] = []
     for keyword in selected_keywords:
         task_id = task_ids.get(keyword) if task_ids else None
         logger.info("Running pipeline for keyword: %s (Task: %s)", keyword, task_id)
         
         try:
             context = _run_single_keyword(keyword, task_id=task_id, orch=orch)
-        except Exception as exc:
-            logger.error(f"Pipeline failed for keyword {keyword}: {exc}")
-            if task_id:
-                orch.update_task(task_id, "failed", str(exc))
-            continue
-
-        strategy = context.get("strategy", {}) if isinstance(context.get("strategy"), dict) else {}
-        topic_graph = strategy.get("industry_topic_graph", {}) if isinstance(strategy.get("industry_topic_graph"), dict) else {}
-        coverage = strategy.get("topic_coverage_by_domain", []) if isinstance(strategy.get("topic_coverage_by_domain"), list) else []
-        runs.append(
-            {
+            # Add simple run metadata for the summary
+            runs_data.append({
                 "keyword": keyword,
                 "articles_count": len(context.get("articles", [])),
                 "topics_count": len(context.get("topics", [])),
-                "cluster_count": len(context.get("clustered_titles", {})),
-                "topic_graph_nodes": len(topic_graph.get("nodes", [])) if isinstance(topic_graph, dict) else 0,
-                "topic_graph_edges": len(topic_graph.get("edges", [])) if isinstance(topic_graph, dict) else 0,
-                "domain_coverage_topics": len(coverage),
-                "context": context,
-            }
-        )
+            })
+        except Exception as exc:
+            logger.error(f"Pipeline research failed for keyword {keyword}: {exc}")
+            continue
 
+    # Now run global analysis if we have a run_id (which we usually do in orch context)
+    # For CLI runs, run_id might need to be fetched or created
+    run_id = getattr(orch, "current_run_id", None)
+    if not run_id:
+        # Fallback to creating a local run record if needed, but usually orch handles this
+        pass
+
+    global_context = _run_global_analysis(run_id) if run_id else {}
+    
     summary = {
         "keywords": selected_keywords,
-        "runs": runs,
-        "total_articles": sum(int(run["articles_count"]) for run in runs),
-        "total_topics": sum(int(run["topics_count"]) for run in runs),
-        "total_topic_graph_nodes": sum(int(run["topic_graph_nodes"]) for run in runs),
-        "total_topic_graph_edges": sum(int(run["topic_graph_edges"]) for run in runs),
+        "runs": runs_data,
+        "total_articles": sum(int(r["articles_count"]) for r in runs_data),
+        "total_topics": sum(int(r["topics_count"]) for r in runs_data),
     }
     logger.info("Pipeline execution complete for %d keyword(s)", len(selected_keywords))
     return summary

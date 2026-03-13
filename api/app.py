@@ -62,10 +62,11 @@ class RunCreate(BaseModel):
 from fastapi import BackgroundTasks
 
 def run_pipeline_task(run_id: str, keywords: List[str]):
-    from scripts.run_pipeline import run_pipeline
+    from scripts.run_pipeline import _run_single_keyword, _run_global_analysis
     from scripts.orchestrator import Orchestrator
     import logging
     import uuid
+    from concurrent.futures import ThreadPoolExecutor
     logger = logging.getLogger(__name__)
     
     orch = Orchestrator()
@@ -80,12 +81,56 @@ def run_pipeline_task(run_id: str, keywords: List[str]):
             )
             task_ids[keyword] = task_id
         
-        logger.info(f"Starting localized background pipeline for run {run_id}")
-        run_pipeline(keywords=keywords, keyword_limit=len(keywords), task_ids=task_ids)
+        logger.info(f"Starting parallel background pipeline for run {run_id} with {len(keywords)} keywords")
+        
+        # Phase 1: Parallel research
+        success_count = 0
+        with ThreadPoolExecutor(max_workers=min(len(keywords), 10)) as executor:
+            futures = [
+                executor.submit(_run_single_keyword, kw, task_ids[kw], orch)
+                for kw in keywords
+            ]
+            for future in futures:
+                try:
+                    future.result()
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"Keyword task failed in parallel execution: {e}")
+
+        # Phase 2: Global analysis (Clustering, Topics, Strategy)
+        if success_count > 0:
+            logger.info(f"Research complete ({success_count}/{len(keywords)}). Starting global analysis...")
+            _run_global_analysis(run_id)
+        
         orch.complete_run(run_id)
     except Exception as exc:
         logger.error(f"Pipeline failed for {run_id}: {exc}")
         orch.complete_run(run_id, status="failed", error=str(exc))
+
+@app.post("/tasks/{task_id}/retry")
+def retry_task(task_id: str, background_tasks: BackgroundTasks) -> Dict[str, str]:
+    from scripts.orchestrator import Orchestrator
+    from scripts.run_pipeline import _run_single_keyword, _run_global_analysis
+    orch = Orchestrator()
+    
+    task = _query_rows("SELECT run_id, keyword FROM keyword_tasks WHERE id = %s", (task_id,))
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    run_id = task[0]["run_id"]
+    keyword = task[0]["keyword"]
+    
+    def retry_worker():
+        try:
+            _run_single_keyword(keyword, task_id, orch)
+            # Re-run global analysis to update the artifacts for this run
+            logger.info(f"Retry successful for {keyword}. Refreshing global analysis for run {run_id}")
+            _run_global_analysis(run_id)
+        except Exception:
+            pass # Already logged and updated in DB in _run_single_keyword
+
+    background_tasks.add_task(retry_worker)
+    return {"message": f"Retry started for keyword: {keyword}"}
 
 @app.delete("/runs/{run_id}")
 def delete_run(run_id: str) -> Dict[str, str]:
@@ -148,8 +193,9 @@ def coverage(run_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
     if run_id:
         # Filter coverage to topics that have articles in this specific run
         sql = """
-            SELECT tdc.topic_id, tdc.domain, tdc.article_count, tdc.avg_rank
+            SELECT tdc.topic_id, t.name as topic_name, tdc.domain, tdc.article_count, tdc.avg_rank
             FROM topic_domain_coverage tdc
+            JOIN topics t ON tdc.topic_id = t.id
             WHERE tdc.topic_id IN (
                 SELECT DISTINCT at.topic_id
                 FROM article_topics at
@@ -162,8 +208,9 @@ def coverage(run_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
     else:
         rows = _query_rows(
             """
-            SELECT topic_id, domain, article_count, avg_rank
-            FROM topic_domain_coverage;
+            SELECT tdc.topic_id, t.name as topic_name, tdc.domain, tdc.article_count, tdc.avg_rank
+            FROM topic_domain_coverage tdc
+            JOIN topics t ON tdc.topic_id = t.id;
             """
         )
     
@@ -172,6 +219,7 @@ def coverage(run_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
         topic_id = str(row.get("topic_id"))
         grouped[topic_id].append(
             {
+                "topic_name": row.get("topic_name"),
                 "domain": row.get("domain"),
                 "article_count": row.get("article_count"),
                 "avg_rank": row.get("avg_rank"),

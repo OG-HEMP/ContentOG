@@ -14,7 +14,7 @@ class DBClient:
     """Shared database utility with idempotent helpers and safe fallbacks."""
 
     def __init__(self) -> None:
-        self._conn = None
+        self._pool = None
         self._memory: Dict[str, List[Dict[str, Any]]] = {
             "keywords": [],
             "articles": [],
@@ -27,50 +27,68 @@ class DBClient:
             "topic_domain_coverage": [],
         }
 
-    def connect(self):
-        if self._conn is not None:
-            # Check if the connection is still alive
-            if not getattr(self._conn, "closed", True):
-                return self._conn
-            else:
-                self._conn = None
+    def _get_pool(self):
+        if self._pool is not None:
+            return self._pool
         
         try:
-            self._conn = get_db()
-            return self._conn
-        except Exception as exc:  # pragma: no cover - fallback path
-            if settings.disable_db_fallback:
-                raise RuntimeError(f"Database unavailable and fallback is disabled: {exc}") from exc
-            logger.warning("Database unavailable; using in-memory fallback: %s", exc)
-            self._conn = None
+            from psycopg2.pool import ThreadedConnectionPool
+            self._pool = ThreadedConnectionPool(
+                minconn=1,
+                maxconn=20,
+                dsn=settings.postgresql_url,
+                sslmode="require"
+            )
+            return self._pool
+        except Exception as exc:
+            logger.warning("Database pool unavailable; using in-memory fallback: %s", exc)
             return None
+
+    def connect(self):
+        # We now return a connection from the pool
+        pool = self._get_pool()
+        if pool:
+            return pool.getconn()
+        return None
+
+    def release(self, conn):
+        if self._pool and conn:
+            self._pool.putconn(conn)
 
     def _execute(self, query: str, params: tuple = (), fetchone: bool = False, fetchall: bool = False):
         conn = self.connect()
         if conn is None:
             return None
 
+        cursor = None
         try:
             from psycopg2.extras import RealDictCursor
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-        except Exception:
-            cursor = conn.cursor()
-
-        with cursor as cur:
-            try:
-                cur.execute(query, params)
-                row = cur.fetchone() if fetchone else None
-                rows = cur.fetchall() if fetchall else None
+            
+            cursor.execute(query, params)
+            
+            if fetchone:
+                row = cursor.fetchone()
                 conn.commit()
-                if fetchone:
-                    return dict(row) if row else None
-                if fetchall:
-                    return [dict(r) for r in rows] if rows else []
-                return None
-            except Exception as exc:
+                return dict(row) if row else None
+            
+            if fetchall:
+                rows = cursor.fetchall()
+                conn.commit()
+                return [dict(r) for r in rows] if rows else []
+            
+            conn.commit()
+            return True
+        except Exception as exc:
+            if conn:
                 conn.rollback()
-                logger.error("Query failed: %s\nQuery: %s\nParams: %s", exc, query, params)
-                raise
+            logger.error("Query failed: %s\nQuery: %s\nParams: %s", exc, query, params)
+            return None
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                self.release(conn)
 
     def query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         rows = self._execute(query, params=params, fetchall=True)

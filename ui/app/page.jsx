@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { useApiData } from '@/hooks/useApiData';
 import { useRun } from '@/components/RunContext';
 import LiveProgress from '@/components/LiveProgress';
+import CoverageMatrix from '@/components/CoverageMatrix';
+import RunHistory from '@/components/RunHistory';
 
 export default function DashboardPage() {
   const { runId } = useRun();
@@ -125,6 +127,10 @@ export default function DashboardPage() {
           <LiveProgress runId={runId || selectedRun.id} />
         </div>
       )}
+
+      {selectedRun && <CoverageMatrix />}
+
+      <RunHistory />
     </section>
   );
 }
