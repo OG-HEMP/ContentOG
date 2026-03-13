@@ -16,9 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install python dependencies
 # First copy only requirements to leverage Docker cache
-COPY requirements.txt .
+COPY config/requirements.txt config/requirements.txt
 RUN pip install --no-cache-dir --user --upgrade pip setuptools wheel Cython
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user -r config/requirements.txt
 
 # Now copy the rest of the code
 COPY . .
@@ -42,7 +42,7 @@ USER contentog
 WORKDIR /app
 
 # Copy installed packages from builder
-COPY --from=builder /root/.local /home/contentog/.local
+COPY --from=builder --chown=contentog:contentog /root/.local /home/contentog/.local
 
 # Copy application code
 COPY --chown=contentog:contentog . .
