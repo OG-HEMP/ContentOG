@@ -231,25 +231,42 @@ def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
 
 
 @app.get("/strategies")
-def strategies() -> List[Dict[str, Any]]:
+def strategies(topic_id: str = None, run_id: str = None) -> List[Dict[str, Any]]:
+    params = []
+    where_clauses = []
+    
+    if topic_id:
+        where_clauses.append("topic_id = %s")
+        params.append(topic_id)
+        
+    if run_id:
+        # Filter strategies for topics that belong to the specified run
+        where_clauses.append("""
+            topic_id IN (
+                SELECT DISTINCT at.topic_id
+                FROM article_topics at
+                JOIN articles a ON at.article_id = a.id
+                JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
+                WHERE kt.run_id = %s
+            )
+        """)
+        params.append(run_id)
+
+    where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    
     try:
-        rows = _query_rows(
-            """
-            SELECT topic_id, title, description
-            FROM pillar_strategies;
-            """
-        )
+        sql = f"SELECT topic_id, title, description FROM pillar_strategies{where_sql};"
+        rows = _query_rows(sql, tuple(params))
     except HTTPException:
-        # Backward-compatible read for current schema where strategy payload is JSONB.
-        rows = _query_rows(
-            """
+        sql = f"""
             SELECT
                 topic_id,
                 strategy_details ->> 'title' AS title,
                 strategy_details ->> 'angle' AS description
-            FROM pillar_strategies;
-            """
-        )
+            FROM pillar_strategies
+            {where_sql};
+        """
+        rows = _query_rows(sql, tuple(params))
     return rows
 
 

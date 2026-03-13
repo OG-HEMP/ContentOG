@@ -48,4 +48,26 @@ export async function POST(request, { params }) {
   }
 }
 
+export async function DELETE(request, { params }) {
+  const path = params.path ? params.path.join('/') : '';
+  const url = new URL(request.url);
+  
+  try {
+    const res = await fetch(`${getBackendUrl()}/${path}${url.search}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': request.headers.get('content-type') || 'application/json',
+      },
+    });
+    
+    const data = await res.text();
+    return new NextResponse(data, {
+      status: res.status,
+      headers: { 'Content-Type': res.headers.get('content-type') || 'application/json' }
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export const dynamic = 'force-dynamic';
