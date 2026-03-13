@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useApiData } from '@/hooks/useApiData';
 import { useRun } from '@/components/RunContext';
 import { useSearchParams } from 'next/navigation';
 
-export default function ArticleExplorerPage() {
+function ArticleExplorerContent() {
   const { runId } = useRun();
   const searchParams = useSearchParams();
   const topicId = searchParams.get('topic_id');
@@ -79,5 +80,13 @@ export default function ArticleExplorerPage() {
         )}
       </div>
     </section>
+  );
+}
+
+export default function ArticleExplorerPage() {
+  return (
+    <Suspense fallback={<div>Loading Article Explorer...</div>}>
+      <ArticleExplorerContent />
+    </Suspense>
   );
 }

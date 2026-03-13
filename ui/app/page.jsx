@@ -33,10 +33,15 @@ export default function DashboardPage() {
   };
   
   const stats = useMemo(() => {
-    if (!selectedRun) return {};
     const tasks = tasksData || [];
     const completed = tasks.filter(t => t.status === 'completed').length;
     const failed = tasks.filter(t => t.status === 'failed').length;
+    
+    // Default stats if no run is selected or load fails
+    if (!selectedRun) {
+      return { completed: 0, failed: 0, total: 0, progress: 0, hasTopics: false };
+    }
+    
     const total = tasks.length || selectedRun.keyword_count || 0;
     
     return {

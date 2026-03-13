@@ -68,16 +68,20 @@ export default function GraphCanvas() {
 
     const graph = new Graph();
     const trimmedNodes = (graphData?.nodes || []).slice(0, NODE_LIMIT);
-    const nodeSet = new Set(trimmedNodes.map((n) => String(n.topic_id || n.id)));
+    const nodeSet = new Set();
 
     trimmedNodes.forEach((node, index) => {
       const nodeId = String(node.topic_id || node.id);
+      if (!nodeId || nodeId === 'undefined') return;
+      
+      nodeSet.add(nodeId);
       const fallbackAngle = (index / Math.max(trimmedNodes.length, 1)) * Math.PI * 2;
       const x = parseCoordinate(node.x) ?? Math.cos(fallbackAngle);
       const y = parseCoordinate(node.y) ?? Math.sin(fallbackAngle);
 
-      graph.addNode(nodeId, {
-        label: node.topic_name || node.label,
+      // use mergeNode to prevent crash on duplicate IDs
+      graph.mergeNode(nodeId, {
+        label: node.topic_name || node.label || `Topic ${nodeId.slice(0, 4)}`,
         size: node.size || 4,
         color: nodeColor(coverageMap.current[nodeId]),
         x,
@@ -86,11 +90,14 @@ export default function GraphCanvas() {
     });
 
     (graphData?.edges || []).forEach((edge) => {
-      if (!nodeSet.has(String(edge.source)) || !nodeSet.has(String(edge.target))) return;
+      const source = String(edge.source);
+      const target = String(edge.target);
+      if (!nodeSet.has(source) || !nodeSet.has(target)) return;
       if ((edge.weight || 0) < edgeThreshold) return;
-      const key = `${edge.source}-${edge.target}`;
+      
+      const key = `${source}-${target}`;
       if (!graph.hasEdge(key)) {
-        graph.addEdgeWithKey(key, String(edge.source), String(edge.target), {
+        graph.addEdgeWithKey(key, source, target, {
           size: edge.weight || 1,
           color: '#64748b'
         });
