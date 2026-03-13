@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS keywords (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     keyword TEXT NOT NULL UNIQUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    embedding vector(1536)
 );
 
 -- Articles Table
@@ -102,6 +103,7 @@ CREATE TABLE IF NOT EXISTS runs (
     article_count INT DEFAULT 0,
     cluster_count INT DEFAULT 0,
     error_summary TEXT,
+    target_domain TEXT,
     metadata JSONB
 );
 

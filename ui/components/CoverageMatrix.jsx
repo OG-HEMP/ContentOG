@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApiData } from '@/hooks/useApiData';
 import { useRun } from '@/components/RunContext';
 

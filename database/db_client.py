@@ -185,12 +185,61 @@ class DBClient:
         self._memory["articles"].append(payload)
         return payload
 
-        if target is None and url:
-            target = next((a for a in self._memory["articles"] if a.get("url") == url), None)
-        if target is None:
-            return None
-        target["embedding"] = [float(v) for v in embedding]
-        return {"id": target.get("id"), "url": target.get("url")}
+    def update_article_embedding(self, article_id: str, embedding: List[float]):
+        """Store the vector embedding for an article."""
+        vector_str = self._vector_literal(embedding)
+        row = self._execute(
+            "UPDATE articles SET embedding = %s::vector WHERE id = %s RETURNING id",
+            (vector_str, article_id),
+            fetchone=True
+        )
+        if row:
+            return row
+            
+        target = next((a for a in self._memory["articles"] if a.get("id") == article_id), None)
+        if target:
+            target["embedding"] = [float(v) for v in embedding]
+            return {"id": article_id}
+        return None
+
+    def update_keyword_embedding(self, keyword: str, embedding: List[float]):
+        """Store the vector embedding for a keyword."""
+        vector_str = self._vector_literal(embedding)
+        row = self._execute(
+            "UPDATE keywords SET embedding = %s::vector WHERE keyword = %s RETURNING id",
+            (vector_str, keyword),
+            fetchone=True
+        )
+        if row:
+            return row
+            
+        target = next((k for k in self._memory["keywords"] if k.get("keyword") == keyword), None)
+        if target:
+            target["embedding"] = [float(v) for v in embedding]
+            return {"keyword": keyword}
+        return None
+
+    def fetch_keywords_with_embeddings(self, run_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetch keywords and their embeddings, optionally filtered by run_id."""
+        if run_id:
+            sql = """
+                SELECT DISTINCT k.keyword, k.embedding::text as embedding_text
+                FROM keywords k
+                JOIN keyword_tasks kt ON k.keyword = kt.keyword
+                WHERE kt.run_id = %s AND k.embedding IS NOT NULL;
+            """
+            rows = self.query(sql, (run_id,))
+        else:
+            sql = "SELECT keyword, embedding::text as embedding_text FROM keywords WHERE embedding IS NOT NULL;"
+            rows = self.query(sql)
+            
+        payload = []
+        for row in rows:
+            payload.append({
+                "keyword": row["keyword"],
+                "embedding": self._parse_vector(row["embedding_text"])
+            })
+        return payload if payload else [k for k in self._memory["keywords"] if "embedding" in k]
 
     def fetch_articles_with_embeddings(self, article_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         if article_ids:

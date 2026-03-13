@@ -1,11 +1,16 @@
 from collections import defaultdict
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 
 from pydantic import BaseModel
 from database.db_client import db_client
 from scripts.orchestrator import Orchestrator
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ContentOG API")
 
@@ -67,10 +72,8 @@ from fastapi import BackgroundTasks
 def run_pipeline_task(run_id: str, keywords: List[str], target_domain: Optional[str] = None):
     from scripts.run_pipeline import _run_single_keyword, _run_global_analysis
     from scripts.orchestrator import Orchestrator
-    import logging
     import uuid
     from concurrent.futures import ThreadPoolExecutor
-    logger = logging.getLogger(__name__)
     
     orch = Orchestrator()
     try:
