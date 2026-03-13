@@ -1,7 +1,7 @@
 import logging
 import json
 from collections import Counter
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from urllib.parse import urlparse
 
 from database.db_client import db_client

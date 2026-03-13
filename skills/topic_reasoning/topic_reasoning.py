@@ -1,7 +1,7 @@
 import logging
 import json
 from collections import Counter
-from typing import Dict, List
+from typing import Dict, List, Any, Optional
 
 from skills.openai_utils import chat_completion_json
 
