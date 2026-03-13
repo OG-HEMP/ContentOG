@@ -5,6 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /build
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

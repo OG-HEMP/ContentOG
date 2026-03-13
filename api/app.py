@@ -59,8 +59,32 @@ class RunCreate(BaseModel):
     keywords: List[str]
 
 
+from fastapi import BackgroundTasks
+
+def run_pipeline_task(run_id: str, keywords: List[str]):
+    from scripts.run_pipeline import run_pipeline
+    from scripts.orchestrator import Orchestrator
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    orch = Orchestrator()
+    try:
+        # Create tasks in DB so UI sees them
+        for keyword in keywords:
+            orch.db._execute(
+                "INSERT INTO keyword_tasks (id, run_id, keyword, status) VALUES (gen_random_uuid(), %s, %s, %s)",
+                (run_id, keyword, "pending")
+            )
+        
+        logger.info(f"Starting localized background pipeline for run {run_id}")
+        run_pipeline(keywords=keywords, keyword_limit=len(keywords))
+        orch.complete_run(run_id)
+    except Exception as exc:
+        logger.error(f"Pipeline failed for {run_id}: {exc}")
+        orch.complete_run(run_id, status="failed", error=str(exc))
+
 @app.post("/runs")
-def create_run(request: RunCreate) -> Dict[str, Any]:
+def create_run(request: RunCreate, background_tasks: BackgroundTasks) -> Dict[str, Any]:
     if not request.keywords:
         raise HTTPException(status_code=400, detail="Keywords list cannot be empty")
 
@@ -68,15 +92,14 @@ def create_run(request: RunCreate) -> Dict[str, Any]:
     run_id = orch.create_run(mode="ui-trigger", keyword_count=len(request.keywords))
 
     try:
-        orch.publish_tasks(run_id, request.keywords)
-        # For simplicity in this demo/UI flow, we mark the run as 'dispatched' 
-        # but the workers will update it as they finish if we had full status tracking.
-        # Actually Orchestrator.complete_run marks it as 'completed'.
-        # Let's just return the run_id.
-        return {"run_id": run_id, "status": "dispatched", "keywords": request.keywords}
+        # Schedule the long-running task to run in the background
+        background_tasks.add_task(run_pipeline_task, run_id, request.keywords)
+        
+        return {"run_id": run_id, "status": "running", "keywords": request.keywords}
     except Exception as exc:
         orch.complete_run(run_id, status="failed", error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to dispatch tasks: {exc}")
+
 
 
 @app.get("/runs/{run_id}/tasks")
