@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -49,7 +49,7 @@ def _load_seed_keywords(default: str = _DEFAULT_KEYWORD, limit: Optional[int] = 
     return normalized[:limit]
 
 
-def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optional[any] = None) -> Dict[str, object]:
+def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optional[Any] = None) -> Dict[str, object]:
     max_retries = 2
     last_exc = None
     
