@@ -65,23 +65,34 @@ def run_pipeline_task(run_id: str, keywords: List[str]):
     from scripts.run_pipeline import run_pipeline
     from scripts.orchestrator import Orchestrator
     import logging
+    import uuid
     logger = logging.getLogger(__name__)
     
     orch = Orchestrator()
     try:
-        # Create tasks in DB so UI sees them
+        # Create tasks in DB so UI sees them and we have their IDs
+        task_ids = {}
         for keyword in keywords:
+            task_id = str(uuid.uuid4())
             orch.db._execute(
-                "INSERT INTO keyword_tasks (id, run_id, keyword, status) VALUES (gen_random_uuid(), %s, %s, %s)",
-                (run_id, keyword, "pending")
+                "INSERT INTO keyword_tasks (id, run_id, keyword, status) VALUES (%s, %s, %s, %s)",
+                (task_id, run_id, keyword, "pending")
             )
+            task_ids[keyword] = task_id
         
         logger.info(f"Starting localized background pipeline for run {run_id}")
-        run_pipeline(keywords=keywords, keyword_limit=len(keywords))
+        run_pipeline(keywords=keywords, keyword_limit=len(keywords), task_ids=task_ids)
         orch.complete_run(run_id)
     except Exception as exc:
         logger.error(f"Pipeline failed for {run_id}: {exc}")
         orch.complete_run(run_id, status="failed", error=str(exc))
+
+@app.delete("/runs/{run_id}")
+def delete_run(run_id: str) -> Dict[str, str]:
+    from scripts.orchestrator import Orchestrator
+    orch = Orchestrator()
+    orch.delete_run(run_id)
+    return {"message": f"Run {run_id} deleted successfully"}
 
 @app.post("/runs")
 def create_run(request: RunCreate, background_tasks: BackgroundTasks) -> Dict[str, Any]:
@@ -108,7 +119,7 @@ def get_run_tasks(run_id: str) -> List[Dict[str, Any]]:
         return []
     rows = _query_rows(
         """
-        SELECT id, keyword, status, started_at, completed_at, error_message
+        SELECT id, keyword, status, status_message, started_at, completed_at, error_message
         FROM keyword_tasks
         WHERE run_id = %s
         ORDER BY created_at ASC;
@@ -130,15 +141,32 @@ def list_topics() -> List[Dict[str, Any]]:
 
 
 @app.get("/coverage")
-def coverage() -> Dict[str, List[Dict[str, Any]]]:
+def coverage(run_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
     if not _table_exists("public.topic_domain_coverage"):
         return {}
-    rows = _query_rows(
+    
+    if run_id:
+        # Filter coverage to topics that have articles in this specific run
+        sql = """
+            SELECT tdc.topic_id, tdc.domain, tdc.article_count, tdc.avg_rank
+            FROM topic_domain_coverage tdc
+            WHERE tdc.topic_id IN (
+                SELECT DISTINCT at.topic_id
+                FROM article_topics at
+                JOIN articles a ON at.article_id = a.id
+                JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
+                WHERE kt.run_id = %s
+            );
         """
-        SELECT topic_id, domain, article_count, avg_rank
-        FROM topic_domain_coverage;
-        """
-    )
+        rows = _query_rows(sql, (run_id,))
+    else:
+        rows = _query_rows(
+            """
+            SELECT topic_id, domain, article_count, avg_rank
+            FROM topic_domain_coverage;
+            """
+        )
+    
     grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for row in rows:
         topic_id = str(row.get("topic_id"))
@@ -153,22 +181,44 @@ def coverage() -> Dict[str, List[Dict[str, Any]]]:
 
 
 @app.get("/topic-graph")
-def topic_graph() -> Dict[str, Sequence[Dict[str, Any]]]:
-    topics = _query_rows(
-        """
-        SELECT id AS topic_id, name AS topic_name
-        FROM topics;
-        """
-    )
-    if _table_exists("public.topic_relationships"):
+def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
+    if run_id:
+        topics = _query_rows(
+            """
+            SELECT DISTINCT t.id AS topic_id, t.name AS topic_name
+            FROM topics t
+            JOIN article_topics at ON t.id = at.topic_id
+            JOIN articles a ON at.article_id = a.id
+            JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
+            WHERE kt.run_id = %s;
+            """,
+            (run_id,)
+        )
         relationships = _query_rows(
             """
-            SELECT topic_id, related_topic_id, weight
-            FROM topic_relationships;
-            """
+            SELECT tr.topic_id, tr.related_topic_id, tr.weight
+            FROM topic_relationships tr
+            WHERE tr.topic_id IN (SELECT topic_id FROM (SELECT DISTINCT t2.id AS topic_id FROM topics t2 JOIN article_topics at2 ON t2.id = at2.topic_id JOIN articles a2 ON at2.article_id = a2.id JOIN keyword_tasks kt2 ON a2.serp_keyword = kt2.keyword WHERE kt2.run_id = %s) s)
+              AND tr.related_topic_id IN (SELECT topic_id FROM (SELECT DISTINCT t3.id AS topic_id FROM topics t3 JOIN article_topics at3 ON t3.id = at3.topic_id JOIN articles a3 ON at3.article_id = a3.id JOIN keyword_tasks kt3 ON a3.serp_keyword = kt3.keyword WHERE kt3.run_id = %s) s2);
+            """,
+            (run_id, run_id)
         )
     else:
-        relationships = []
+        topics = _query_rows(
+            """
+            SELECT id AS topic_id, name AS topic_name
+            FROM topics;
+            """
+        )
+        if _table_exists("public.topic_relationships"):
+            relationships = _query_rows(
+                """
+                SELECT topic_id, related_topic_id, weight
+                FROM topic_relationships;
+                """
+            )
+        else:
+            relationships = []
     edges = [
         {
             "source": row.get("topic_id"),
@@ -204,30 +254,32 @@ def strategies() -> List[Dict[str, Any]]:
 
 
 @app.get("/articles")
-def list_articles(topic_id: str = None) -> List[Dict[str, Any]]:
+def list_articles(topic_id: str = None, run_id: str = None) -> List[Dict[str, Any]]:
     if not _table_exists("public.articles"):
         return []
     
+    params = []
+    where_clauses = []
+    
     if topic_id:
-        sql = """
-            SELECT a.id, a.url, a.title, a.word_count, a.serp_rank, a.publish_date,
-                   substring(a.content from 1 for 200) as summary,
-                   split_part(a.url, '/', 3) as domain
-            FROM articles a
-            JOIN article_topics at ON a.id = at.article_id
-            WHERE at.topic_id = %s
-            ORDER BY a.created_at DESC
-            LIMIT 100;
-        """
-        rows = _query_rows(sql, (topic_id,))
-    else:
-        sql = """
-            SELECT id, url, title, word_count, serp_rank, publish_date,
-                   substring(content from 1 for 200) as summary,
-                   split_part(url, '/', 3) as domain
-            FROM articles
-            ORDER BY created_at DESC
-            LIMIT 100;
-        """
-        rows = _query_rows(sql)
+        where_clauses.append("at.topic_id = %s")
+        params.append(topic_id)
+    
+    if run_id:
+        where_clauses.append("a.serp_keyword IN (SELECT keyword FROM keyword_tasks WHERE run_id = %s)")
+        params.append(run_id)
+        
+    where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    
+    sql = f"""
+        SELECT DISTINCT a.id, a.url, a.title, a.word_count, a.serp_rank, a.publish_date,
+               substring(a.content from 1 for 200) as summary,
+               split_part(a.url, '/', 3) as domain
+        FROM articles a
+        {"JOIN article_topics at ON a.id = at.article_id" if topic_id else ""}
+        {where_sql}
+        ORDER BY a.id DESC
+        LIMIT 100;
+    """
+    rows = _query_rows(sql, tuple(params))
     return rows

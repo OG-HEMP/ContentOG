@@ -49,20 +49,46 @@ def _load_seed_keywords(default: str = _DEFAULT_KEYWORD, limit: Optional[int] = 
     return normalized[:limit]
 
 
-def _run_single_keyword(keyword: str) -> Dict[str, object]:
+def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optional[any] = None) -> Dict[str, object]:
     context: Dict[str, object] = {"keyword": keyword}
+    
+    def update_progress(msg: str):
+        if task_id and orch:
+            orch.update_task(task_id, "running", msg)
+        logger.info(f"[{keyword}] {msg}")
+
+    update_progress("Finding SERP results...")
     context = SerpAgent().run(context)
+    
+    update_progress("Extracting PAA questions...")
     context = PaaAgent().run(context)
+    
+    update_progress("Scraping article content...")
     context = CrawlAgent().run(context)
+    
+    update_progress("Generating embeddings...")
     context = EmbeddingAgent().run(context)
+    
+    update_progress("Analyzing topic clusters...")
     context = ClusterAgent().run(context)
+    
+    update_progress("Mapping semantic topics...")
     context = TopicAgent().run(context)
+    
+    update_progress("Generating strategy insights...")
     context = StrategyAgent().run(context)
+    
+    if task_id and orch:
+        orch.update_task(task_id, "completed", "Keyword analysis complete.")
+        
     return context
 
 
-def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: Optional[int] = None) -> Dict[str, object]:
+def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: Optional[int] = None, task_ids: Optional[Dict[str, str]] = None) -> Dict[str, object]:
     """Execute the recovery/discovery pipeline for given keywords."""
+    from scripts.orchestrator import Orchestrator
+    orch = Orchestrator()
+    
     run_preflight()
     limit = keyword_limit if keyword_limit is not None else settings.keyword_limit
     selected_keywords = keywords or _load_seed_keywords(limit=limit)
@@ -70,8 +96,17 @@ def run_pipeline(keywords: Optional[List[str]] = None, keyword_limit: Optional[i
 
     runs: List[Dict[str, object]] = []
     for keyword in selected_keywords:
-        logger.info("Running pipeline for keyword: %s", keyword)
-        context = _run_single_keyword(keyword)
+        task_id = task_ids.get(keyword) if task_ids else None
+        logger.info("Running pipeline for keyword: %s (Task: %s)", keyword, task_id)
+        
+        try:
+            context = _run_single_keyword(keyword, task_id=task_id, orch=orch)
+        except Exception as exc:
+            logger.error(f"Pipeline failed for keyword {keyword}: {exc}")
+            if task_id:
+                orch.update_task(task_id, "failed", str(exc))
+            continue
+
         strategy = context.get("strategy", {}) if isinstance(context.get("strategy"), dict) else {}
         topic_graph = strategy.get("industry_topic_graph", {}) if isinstance(strategy.get("industry_topic_graph"), dict) else {}
         coverage = strategy.get("topic_coverage_by_domain", []) if isinstance(strategy.get("topic_coverage_by_domain"), list) else []

@@ -71,6 +71,22 @@ class Orchestrator:
             except Exception as exc:
                 logger.error("Failed to publish or log task for keyword %s: %s", keyword, exc)
 
+    def update_task(self, task_id: str, status: str, message: Optional[str] = None):
+        """Update a specific task's status and message."""
+        try:
+            self.db.update_task_status(task_id, status, message)
+            logger.info("Updated task %s to %s (%s)", task_id, status, message or "no message")
+        except Exception as exc:
+            logger.error("Failed to update task %s: %s", task_id, exc)
+
+    def delete_run(self, run_id: str):
+        """Delete a run and all its associated data."""
+        try:
+            self.db.delete_run(run_id)
+            logger.info("Deleted run %s and associated tasks", run_id)
+        except Exception as exc:
+            logger.error("Failed to delete run %s: %s", run_id, exc)
+
     def complete_run(self, run_id: str, status: str = "completed", error: Optional[str] = None):
         """Mark a run as completed."""
         try:

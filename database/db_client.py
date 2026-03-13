@@ -52,15 +52,20 @@ class DBClient:
             cursor = conn.cursor()
 
         with cursor as cur:
-            cur.execute(query, params)
-            row = cur.fetchone() if fetchone else None
-            rows = cur.fetchall() if fetchall else None
-            conn.commit()
-            if fetchone:
-                return dict(row) if row else None
-            if fetchall:
-                return [dict(r) for r in rows]
-            return None
+            try:
+                cur.execute(query, params)
+                row = cur.fetchone() if fetchone else None
+                rows = cur.fetchall() if fetchall else None
+                conn.commit()
+                if fetchone:
+                    return dict(row) if row else None
+                if fetchall:
+                    return [dict(r) for r in rows] if rows else []
+                return None
+            except Exception as exc:
+                conn.rollback()
+                logger.error("Query failed: %s\nQuery: %s\nParams: %s", exc, query, params)
+                raise
 
     def query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         rows = self._execute(query, params=params, fetchall=True)
@@ -508,6 +513,25 @@ class DBClient:
         }
         self._memory["topic_domain_coverage"].append(payload)
         return payload
+
+    def update_task_status(self, task_id: str, status: str, status_message: Optional[str] = None):
+        """Update the status and optional status message for a keyword task."""
+        if status_message:
+            self._execute(
+                "UPDATE keyword_tasks SET status = %s, status_message = %s WHERE id = %s",
+                (status, status_message, task_id)
+            )
+        else:
+            self._execute(
+                "UPDATE keyword_tasks SET status = %s WHERE id = %s",
+                (status, task_id)
+            )
+
+    def delete_run(self, run_id: str):
+        """Delete a run and its associated tasks."""
+        # Deleting associated tasks first due to foreign key constraints if any
+        self._execute("DELETE FROM keyword_tasks WHERE run_id = %s", (run_id,))
+        self._execute("DELETE FROM runs WHERE id = %s", (run_id,))
 
     def fetch_articles(self):
         rows = self.query("SELECT id, url, title, content, serp_keyword, serp_rank FROM articles ORDER BY created_at ASC")

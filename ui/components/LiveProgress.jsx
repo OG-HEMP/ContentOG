@@ -36,24 +36,36 @@ export default function LiveProgress({ runId }) {
       <div className="max-h-60 overflow-y-auto p-2">
         <ul className="space-y-1">
           {tasks?.map((task) => (
-            <li key={task.id} className="flex items-center justify-between rounded p-2 text-xs hover:bg-slate-800/50">
-              <span className="truncate font-medium text-slate-300">{task.keyword}</span>
-              <div className="flex items-center gap-2">
-                {task.status === 'running' && (
-                  <span className="flex h-2 w-2">
-                    <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-indigo-500"></span>
+            <li key={task.id} className="flex flex-col rounded p-2 text-xs hover:bg-slate-800/50">
+              <div className="flex items-center justify-between w-full">
+                <span className="truncate font-medium text-slate-300">{task.keyword}</span>
+                <div className="flex items-center gap-2">
+                  {task.status === 'running' && (
+                    <span className="flex h-2 w-2">
+                      <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-indigo-400 opacity-75"></span>
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-indigo-500"></span>
+                    </span>
+                  )}
+                  <span className={`rounded px-1.5 py-0.5 font-bold uppercase transition-colors ${
+                    task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
+                    task.status === 'failed' ? 'bg-red-500/10 text-red-400' :
+                    task.status === 'running' ? 'text-indigo-400' :
+                    'bg-slate-700/50 text-slate-500'
+                  }`}>
+                    {task.status}
                   </span>
-                )}
-                <span className={`rounded px-1.5 py-0.5 font-bold uppercase transition-colors ${
-                  task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
-                  task.status === 'failed' ? 'bg-red-500/10 text-red-400' :
-                  task.status === 'running' ? 'text-indigo-400' :
-                  'bg-slate-700/50 text-slate-500'
-                }`}>
-                  {task.status}
-                </span>
+                </div>
               </div>
+              {task.status === 'running' && task.status_message && (
+                <p className="mt-1 text-[10px] text-slate-500 italic animate-pulse">
+                  {task.status_message}
+                </p>
+              )}
+              {task.status === 'failed' && task.error_message && (
+                <p className="mt-1 text-[10px] text-red-400/80">
+                  Error: {task.error_message}
+                </p>
+              )}
             </li>
           ))}
           {total === 0 && <li className="py-4 text-center text-xs text-slate-500">No tasks found for this run</li>}

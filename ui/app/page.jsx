@@ -17,6 +17,20 @@ export default function DashboardPage() {
 
   const runs = Array.isArray(runsData) ? runsData : [];
   const selectedRun = runs.find(r => String(r.id) === String(runId)) || runs[0];
+
+  const handleDeleteRun = async () => {
+    if (!selectedRun) return;
+    if (!confirm('Are you sure you want to delete this run and all associated task data?')) return;
+    
+    try {
+      const res = await fetch(`/api/runs/${selectedRun.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        window.location.reload(); // Simple way to refresh lists
+      }
+    } catch (err) {
+      console.error('Failed to delete run:', err);
+    }
+  };
   
   const stats = useMemo(() => {
     if (!selectedRun) return {};
@@ -47,13 +61,33 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold">Discovery Control Center</h1>
           {selectedRun && (
-            <p className="text-sm text-slate-400">
-              Selected Run ID: <span className="text-slate-200">#{selectedRun.id.slice(0, 12)}...</span> 
-              • Started {new Date(selectedRun.started_at).toLocaleString()}
-            </p>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-sm text-slate-400">
+                Selected Run ID: <span className="text-slate-200">#{selectedRun.id.slice(0, 12)}...</span> 
+                • Started {new Date(selectedRun.started_at).toLocaleString()}
+              </p>
+              {(selectedRun.status === 'completed' || selectedRun.status === 'failed') && (
+                <button 
+                  onClick={handleDeleteRun}
+                  className="text-[10px] uppercase font-bold text-red-400 hover:text-red-300 transition-colors border border-red-900/50 px-2 py-0.5 rounded bg-red-900/10"
+                >
+                  Delete Run
+                </button>
+              )}
+            </div>
           )}
         </div>
       </header>
+
+      {selectedRun?.status === 'failed' && selectedRun.error_summary && (
+        <div className="bg-red-900/20 border border-red-900/50 p-4 rounded-lg flex items-start gap-3 text-red-200 mb-6">
+          <span className="text-xl">❌</span>
+          <div>
+            <p className="font-semibold">Run Execution Failed</p>
+            <p className="text-sm text-red-200/70">{selectedRun.error_summary}</p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-4">
         {loading && !runsData && <p className="col-span-full">Loading engine state...</p>}
