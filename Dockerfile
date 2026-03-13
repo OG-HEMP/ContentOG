@@ -11,10 +11,12 @@ ENV PATH="/root/.local/bin:${PATH}"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
 COPY . .
+RUN pip install --no-cache-dir --user --upgrade pip setuptools wheel Cython
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # --- Production Stage ---
