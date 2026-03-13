@@ -201,3 +201,33 @@ def strategies() -> List[Dict[str, Any]]:
             """
         )
     return rows
+
+
+@app.get("/articles")
+def list_articles(topic_id: str = None) -> List[Dict[str, Any]]:
+    if not _table_exists("public.articles"):
+        return []
+    
+    if topic_id:
+        sql = """
+            SELECT a.id, a.url, a.title, a.word_count, a.serp_rank, a.publish_date,
+                   substring(a.content from 1 for 200) as summary,
+                   split_part(a.url, '/', 3) as domain
+            FROM articles a
+            JOIN article_topics at ON a.id = at.article_id
+            WHERE at.topic_id = %s
+            ORDER BY a.created_at DESC
+            LIMIT 100;
+        """
+        rows = _query_rows(sql, (topic_id,))
+    else:
+        sql = """
+            SELECT id, url, title, word_count, serp_rank, publish_date,
+                   substring(content from 1 for 200) as summary,
+                   split_part(url, '/', 3) as domain
+            FROM articles
+            ORDER BY created_at DESC
+            LIMIT 100;
+        """
+        rows = _query_rows(sql)
+    return rows

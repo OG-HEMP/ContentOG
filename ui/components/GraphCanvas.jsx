@@ -10,6 +10,11 @@ import LiveProgress from '@/components/LiveProgress';
 
 const NODE_LIMIT = 200;
 
+function parseCoordinate(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function nodeColor(topicCoverage) {
   if (topicCoverage === 'your') return '#22c55e';
   if (topicCoverage === 'competitor') return '#ef4444';
@@ -65,12 +70,18 @@ export default function GraphCanvas() {
     const trimmedNodes = (graphData?.nodes || []).slice(0, NODE_LIMIT);
     const nodeSet = new Set(trimmedNodes.map((n) => String(n.topic_id || n.id)));
 
-    trimmedNodes.forEach((node) => {
+    trimmedNodes.forEach((node, index) => {
       const nodeId = String(node.topic_id || node.id);
+      const fallbackAngle = (index / Math.max(trimmedNodes.length, 1)) * Math.PI * 2;
+      const x = parseCoordinate(node.x) ?? Math.cos(fallbackAngle);
+      const y = parseCoordinate(node.y) ?? Math.sin(fallbackAngle);
+
       graph.addNode(nodeId, {
         label: node.topic_name || node.label,
         size: node.size || 4,
-        color: nodeColor(coverageMap.current[nodeId])
+        color: nodeColor(coverageMap.current[nodeId]),
+        x,
+        y
       });
     });
 

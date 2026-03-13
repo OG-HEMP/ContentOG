@@ -16,8 +16,31 @@ export default function CoverageMatrix() {
   const [sortBy, setSortBy] = useState('gap_score');
 
   const rows = useMemo(() => {
-    const topics = data?.topics || [];
-    return [...topics].sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
+    if (!data || typeof data !== 'object') return [];
+    
+    // Transform { topic_id: [ {domain, article_count, avg_rank}, ... ] } 
+    // into rows for the table
+    return Object.entries(data).map(([topicId, stats]) => {
+      const yourDomain = stats.find(s => s.domain.includes('contentog') || s.domain.includes('your-domain')) || {};
+      const competitors = stats.filter(s => !s.domain.includes('contentog') && !s.domain.includes('your-domain'));
+      
+      const yourCount = yourDomain.article_count || 0;
+      const competitorAvg = competitors.length > 0 
+        ? competitors.reduce((acc, c) => acc + (c.article_count || 0), 0) / competitors.length 
+        : 0;
+      
+      // Heuristic gap score: high if competitors have many articles and you have few
+      const gapScore = Math.min(100, Math.max(0, Math.round((competitorAvg - yourCount) * 10)));
+
+      return {
+        topic_id: topicId,
+        topic_name: `Topic ${topicId.slice(0, 4)}`, // Fallback since names aren't in /coverage
+        your_domain_count: yourCount,
+        competitor_a_count: competitors[0]?.article_count || 0,
+        competitor_b_count: competitors[1]?.article_count || 0,
+        gap_score: gapScore
+      };
+    }).sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
   }, [data, sortBy]);
 
   return (
@@ -43,17 +66,25 @@ export default function CoverageMatrix() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.topic_id} className="border-t border-slate-700">
-                <td className="py-2">{row.topic_name || row.topic_id}</td>
-                <td>{row.your_domain_count || 0}</td>
-                <td>{row.competitor_a_count || 0}</td>
-                <td>{row.competitor_b_count || 0}</td>
-                <td>
-                  <span className={`rounded px-2 py-1 ${gapColor(row.gap_score || 0)}`}>{row.gap_score || 0}</span>
+            {rows.length > 0 ? (
+              rows.map((row) => (
+                <tr key={row.topic_id} className="border-t border-slate-700">
+                  <td className="py-2">{row.topic_name || row.topic_id}</td>
+                  <td>{row.your_domain_count || 0}</td>
+                  <td>{row.competitor_a_count || 0}</td>
+                  <td>{row.competitor_b_count || 0}</td>
+                  <td>
+                    <span className={`rounded px-2 py-1 ${gapColor(row.gap_score || 0)}`}>{row.gap_score || 0}</span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="py-10 text-center text-slate-500 italic">
+                  No coverage data available yet. Select a run with completed topic extraction to view the matrix.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

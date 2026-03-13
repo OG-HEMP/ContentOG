@@ -14,6 +14,10 @@ export function useApiData(path, runId, { deps = [], refreshInterval = null } = 
     let timer = null;
 
     async function load(isManual = true) {
+      if (!path) {
+        setLoading(false);
+        return;
+      }
       if (isManual) {
         setLoading(true);
         setError(null);
