@@ -42,7 +42,7 @@ root files.
 Only the following files are allowed in the project root:
 
 requirements.md skills.md agents.md workflow.md antigravity_bootstrap.md
-repo_import.md repo_mapping.md PROJECT_RULES.md .env.example task.md
+repo_import.md repo_mapping.md PROJECT_RULES.md deployment.md .env.example task.md
 
 No additional code files may be created in the root directory.
 

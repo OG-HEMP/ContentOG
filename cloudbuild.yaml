@@ -1,31 +1,37 @@
 steps:
-  # 1. Build the Backend image (used for API and Worker)
+  # 1. Build and Push Backend image (used for API and Worker)
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA', '.', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "$_SKIP_BACKEND" != "true" ]; then
+          docker build -t $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA . -t $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest && \
+          docker push $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA && \
+          docker push $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest
+        else
+          echo "⏭️ Skipping Backend build and push"
+        fi
 
-  # 2. Build the UI image
+  # 2. Build and Push UI image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA', './ui', '-t', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest']
-
-  # 3. Push both images
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest']
-
-images:
-  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:$COMMIT_SHA'
-  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/backend:latest'
-  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA'
-  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "$_SKIP_UI" != "true" ]; then
+          docker build -t $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA ./ui -t $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest && \
+          docker push $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:$COMMIT_SHA && \
+          docker push $_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO_NAME/ui:latest
+        else
+          echo "⏭️ Skipping UI build and push"
+        fi
 
 substitutions:
   _AR_HOSTNAME: 'us-central1-docker.pkg.dev'
   _AR_REPO_NAME: 'contentog'
+  _SKIP_BACKEND: 'false'
+  _SKIP_UI: 'false'
 
 options:
   logging: CLOUD_LOGGING_ONLY
