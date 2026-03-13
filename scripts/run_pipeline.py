@@ -64,6 +64,8 @@ def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optio
         try:
             if attempt > 0:
                 update_progress(f"Retrying (Attempt {attempt}/{max_retries})...")
+                if task_id and orch:
+                    orch.db.increment_task_retry_count(task_id)
 
             update_progress("Finding SERP results...")
             context = SerpAgent().run(context)

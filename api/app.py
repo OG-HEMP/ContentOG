@@ -122,14 +122,19 @@ def retry_task(task_id: str, background_tasks: BackgroundTasks) -> Dict[str, str
     run_id = task[0]["run_id"]
     keyword = task[0]["keyword"]
     
+    # Increment retry count for manual triggering
+    orch.db.increment_task_retry_count(task_id)
+    
     def retry_worker():
         try:
+            logger.info(f"Manual retry START: {keyword} (Task: {task_id})")
             _run_single_keyword(keyword, task_id, orch)
             # Re-run global analysis to update the artifacts for this run
-            logger.info(f"Retry successful for {keyword}. Refreshing global analysis for run {run_id}")
+            logger.info(f"Manual retry SUCCESS for {keyword}. Refreshing global analysis for run {run_id}")
             _run_global_analysis(run_id)
-        except Exception:
-            pass # Already logged and updated in DB in _run_single_keyword
+        except Exception as e:
+            logger.error(f"Manual retry FAILURE for {keyword}: {e}")
+            pass # Already updated in DB by _run_single_keyword
 
     background_tasks.add_task(retry_worker)
     return {"message": f"Retry started for keyword: {keyword}"}
@@ -166,7 +171,7 @@ def get_run_tasks(run_id: str) -> List[Dict[str, Any]]:
         return []
     rows = _query_rows(
         """
-        SELECT id, keyword, status, status_message, started_at, completed_at, error_message
+        SELECT id, keyword, status, status_message, started_at, completed_at, error_message, retry_count
         FROM keyword_tasks
         WHERE run_id = %s
         ORDER BY created_at ASC;

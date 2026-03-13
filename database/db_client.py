@@ -550,6 +550,13 @@ class DBClient:
                 (status, task_id)
             )
 
+    def increment_task_retry_count(self, task_id: str):
+        """Increment the retry_count for a specific keyword task."""
+        self._execute(
+            "UPDATE keyword_tasks SET retry_count = COALESCE(retry_count, 0) + 1 WHERE id = %s",
+            (task_id,)
+        )
+
     def delete_run(self, run_id: str):
         """Delete a run and its associated tasks."""
         # Deleting associated tasks first due to foreign key constraints if any
