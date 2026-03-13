@@ -26,7 +26,36 @@ AR_HOSTNAME="${REGION}-docker.pkg.dev"
 BACKEND_IMAGE="${AR_HOSTNAME}/${PROJECT_ID}/${REPO_NAME}/backend:latest"
 UI_IMAGE="${AR_HOSTNAME}/${PROJECT_ID}/${REPO_NAME}/ui:latest"
 
+# Cleanup failed/old resources to free up space/concurrency
+cleanup_resources() {
+    echo "🧹 Cleaning up failed/old resources..."
+    
+    # 1. Delete source tarballs from failed builds in GCS
+    FAILED_SOURCES=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.object)" --limit=10)
+    BUCKET=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.bucket)" --limit=1)
+    
+    if [ -n "$FAILED_SOURCES" ] && [ -n "$BUCKET" ]; then
+        for source in $FAILED_SOURCES; do
+            echo "Deleting failed source: gs://$BUCKET/$source"
+            gsutil rm "gs://$BUCKET/$source" 2>/dev/null || true
+        done
+    fi
+
+    # 2. Prune old Cloud Run revisions (keep only latest 5)
+    for service in "$API_SERVICE" "$UI_SERVICE"; do
+        if gcloud run services describe "$service" --region "$REGION" >/dev/null 2>&1; then
+            echo "Pruning old revisions for $service..."
+            OLD_REVISIONS=$(gcloud run revisions list --service "$service" --region "$REGION" --format='value(metadata.name)' --sort-by='~metadata.creationTimestamp' | tail -n +6)
+            for rev in $OLD_REVISIONS; do
+                echo "Deleting revision: $rev"
+                gcloud run revisions delete "$rev" --region "$REGION" --quiet || true
+            done
+        fi
+    done
+}
+
 echo "🚀 Starting ContentOG Cloud Deployment for project: $PROJECT_ID"
+cleanup_resources
 
 # 1. Build and Push Images
 echo "📦 Building and pushing images via Cloud Build..."
