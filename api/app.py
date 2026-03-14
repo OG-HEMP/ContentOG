@@ -68,7 +68,6 @@ class RunCreate(BaseModel):
     target_domain: Optional[str] = None
 
 
-from fastapi import BackgroundTasks
 
 def run_pipeline_task(run_id: str, keywords: List[str], target_domain: Optional[str] = None):
     from scripts.run_pipeline import _run_single_keyword, _run_global_analysis
@@ -354,7 +353,14 @@ def reprocess_run(run_id: str, background_tasks: BackgroundTasks) -> Dict[str, s
     if not run_check:
         raise HTTPException(status_code=404, detail="Run not found")
     
-    target_domain = run_check[0]["metadata"].get("target_domain") if run_check[0].get("metadata") else None
+    metadata = run_check[0].get("metadata")
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except:
+            metadata = {}
+    
+    target_domain = metadata.get("target_domain") if metadata else None
     
     def worker():
         try:
