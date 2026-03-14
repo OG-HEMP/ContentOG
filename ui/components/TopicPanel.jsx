@@ -28,8 +28,8 @@ export default function TopicPanel() {
     setError(null);
 
     Promise.all([
-      apiGet(`/coverage?topic_id=${selected.id}`, { runId }),
-      apiGet(`/strategies?topic_id=${selected.id}`, { runId })
+      apiGet(`/coverage`, { runId, params: { topic_id: selected.id } }),
+      apiGet(`/strategies`, { runId, params: { topic_id: selected.id } })
     ])
       .then(([coverageData, strategiesData]) => {
         if (!mounted) return;
@@ -74,24 +74,17 @@ export default function TopicPanel() {
           <div className="space-y-6">
             <header className="space-y-1">
               <h3 className="text-xl font-bold text-white">{selected.label}</h3>
-              <p className="text-xs text-indigo-400 font-medium">Semantic Cluster: Enterprise Strategy</p>
+              {selected.type && <p className="text-xs text-indigo-400 font-medium">Type: {selected.type}</p>}
             </header>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/30">
-                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Search Volume</p>
-                <p className="text-lg font-semibold flex items-center gap-2">
-                  4.2k <span className="text-xs text-green-400 font-normal">↑ 12%</span>
-                </p>
+                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Cluster Type</p>
+                <p className="text-sm font-semibold text-slate-200 truncate">{selected.type || '—'}</p>
               </div>
               <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/30">
-                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Difficulty</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-lg font-semibold">68<span className="text-xs text-slate-500 font-normal">/100</span></p>
-                  <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500 rounded-full" style={{ width: '68%' }}></div>
-                  </div>
-                </div>
+                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Node ID</p>
+                <p className="text-sm font-mono text-slate-400 truncate">{selected.id}</p>
               </div>
             </div>
 

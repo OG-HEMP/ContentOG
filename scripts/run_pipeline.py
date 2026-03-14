@@ -49,12 +49,12 @@ def _load_seed_keywords(default: str = _DEFAULT_KEYWORD, limit: Optional[int] = 
     return normalized[:limit]
 
 
-def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optional[Any] = None) -> Dict[str, object]:
+def _run_single_keyword(keyword: str, task_id: Optional[str] = None, orch: Optional[Any] = None, run_id: Optional[str] = None, target_domain: Optional[str] = None) -> Dict[str, object]:
     max_retries = 2
     last_exc = None
     
     for attempt in range(max_retries + 1):
-        context: Dict[str, object] = {"keyword": keyword}
+        context: Dict[str, object] = {"keyword": keyword, "run_id": run_id, "target_domain": target_domain}
         
         def update_progress(msg: str, status: str = "running"):
             if task_id and orch:

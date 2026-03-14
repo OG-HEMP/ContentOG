@@ -20,12 +20,15 @@ class ClusterAgent:
         # 2. Fetch Article Embeddings
         embedded_articles = context.get("embedded_articles", [])
         if not embedded_articles:
-            article_ids = [
-                str(article.get("article_id"))
-                for article in context.get("articles", [])
-                if article.get("article_id")
-            ]
-            embedded_articles = db_client.fetch_articles_with_embeddings(article_ids=article_ids)
+            if run_id:
+                embedded_articles = db_client.fetch_articles_with_embeddings_by_run(run_id)
+            else:
+                article_ids = [
+                    str(article.get("article_id"))
+                    for article in context.get("articles", [])
+                    if article.get("article_id")
+                ]
+                embedded_articles = db_client.fetch_articles_with_embeddings(article_ids=article_ids)
         articles = embedded_articles or context.get("articles", [])
         embeddings = [article.get("embedding", []) for article in articles]
         cluster_articles = []

@@ -185,21 +185,38 @@ class DBClient:
         self._memory["articles"].append(payload)
         return payload
 
-    def update_article_embedding(self, article_id: str, embedding: List[float]):
-        """Store the vector embedding for an article."""
+    def update_article_embedding(self, article_id: str, embedding: List[float], url: Optional[str] = None):
+        """Store the vector embedding for an article, mapping by ID or URL."""
         vector_str = self._vector_literal(embedding)
-        row = self._execute(
-            "UPDATE articles SET embedding = %s::vector WHERE id = %s RETURNING id",
-            (vector_str, article_id),
-            fetchone=True
-        )
-        if row:
-            return row
+        
+        # Try updating by ID first
+        if article_id:
+            row = self._execute(
+                "UPDATE articles SET embedding = %s::vector WHERE id = %s RETURNING id",
+                (vector_str, article_id),
+                fetchone=True
+            )
+            if row: return row
+
+        # If ID update failed or ID missing, try URL
+        if url:
+            row = self._execute(
+                "UPDATE articles SET embedding = %s::vector WHERE url = %s RETURNING id",
+                (vector_str, url),
+                fetchone=True
+            )
+            if row: return row
             
-        target = next((a for a in self._memory["articles"] if a.get("id") == article_id), None)
+        # Memory fallback
+        target = None
+        if article_id:
+            target = next((a for a in self._memory["articles"] if a.get("id") == article_id), None)
+        if not target and url:
+            target = next((a for a in self._memory["articles"] if a.get("url") == url), None)
+            
         if target:
             target["embedding"] = [float(v) for v in embedding]
-            return {"id": article_id}
+            return {"id": target.get("id")}
         return None
 
     def update_keyword_embedding(self, keyword: str, embedding: List[float]):
@@ -298,6 +315,40 @@ class DBClient:
             for article in self._memory["articles"]
             if isinstance(article.get("embedding"), list) and article.get("embedding")
         ]
+
+    def fetch_articles_with_embeddings_by_run(self, run_id: str) -> List[Dict[str, Any]]:
+        rows = self.query(
+            """
+            SELECT
+                a.id,
+                a.url,
+                a.title,
+                a.content,
+                a.serp_keyword,
+                a.serp_rank,
+                a.embedding::text AS embedding_text
+            FROM articles a
+            JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
+            WHERE kt.run_id = %s
+              AND a.embedding IS NOT NULL
+            ORDER BY a.created_at ASC;
+            """,
+            (run_id,),
+        )
+        if rows:
+            return [
+                {
+                    "id": r.get("id"),
+                    "url": r.get("url"),
+                    "title": r.get("title"),
+                    "content": r.get("content"),
+                    "serp_keyword": r.get("serp_keyword"),
+                    "serp_rank": r.get("serp_rank"),
+                    "embedding": self._parse_vector(r.get("embedding_text")),
+                }
+                for r in rows
+            ]
+        return []
 
     def insert_paa_question(self, keyword: str, question: str):
         keyword_id = self.get_or_create_keyword(keyword)

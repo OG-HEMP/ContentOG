@@ -67,13 +67,16 @@ cleanup_resources() {
     echo "🧹 Cleaning up failed/old resources..."
     
     # 1. Delete source tarballs from failed builds
-    FAILED_SOURCES=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.object)" --limit=5 2>/dev/null || echo "")
-    BUCKET=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.bucket)" --limit=1 2>/dev/null || echo "")
-    
-    if [ -n "$FAILED_SOURCES" ] && [ -n "$BUCKET" ]; then
-        for source in $FAILED_SOURCES; do
-            gcloud storage rm "gs://$BUCKET/$source" 2>/dev/null || true
-        done
+    if [ -n "$PROJECT_ID" ]; then
+        FAILED_SOURCES=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.object)" --limit=5 2>/dev/null)
+        BUCKET=$(gcloud builds list --project "$PROJECT_ID" --filter="status=FAILURE" --format="value(source.storageSource.bucket)" --limit=1 2>/dev/null)
+        
+        if [ -n "$FAILED_SOURCES" ] && [ -n "$BUCKET" ]; then
+            for source in $FAILED_SOURCES; do
+                echo "Deleting failed source: gs://$BUCKET/$source"
+                gcloud storage rm "gs://$BUCKET/$source" 2>/dev/null || true
+            done
+        fi
     fi
 
     # 2. Prune old Cloud Run revisions
@@ -82,12 +85,13 @@ cleanup_resources() {
     if [[ "$SCOPE" == "ui" || "$SCOPE" == "all" ]]; then SERVICES_TO_PRUNE+=("$UI_SERVICE"); fi
 
     for service in "${SERVICES_TO_PRUNE[@]}"; do
-        if gcloud run services describe "$service" --region "$REGION" >/dev/null 2>&1; then
+        if gcloud run services describe "$service" --region "$REGION" --project "$PROJECT_ID" >/dev/null 2>&1; then
             echo "Pruning old revisions for $service..."
-            OLD_REVISIONS=$(gcloud run revisions list --service "$service" --region "$REGION" --format='value(metadata.name)' --sort-by='~metadata.creationTimestamp' | tail -n +6)
-            for rev in $OLD_REVISIONS; do
+            REVS=$(gcloud run revisions list --service "$service" --region "$REGION" --project "$PROJECT_ID" --format='value(metadata.name)' --sort-by='~metadata.creationTimestamp' | tail -n +6)
+            for rev in $REVS; do
                 if [ -n "$rev" ]; then
-                    gcloud run revisions delete "$rev" --region "$REGION" --quiet || true
+                    echo "Deleting revision: $rev"
+                    gcloud run revisions delete "$rev" --region "$REGION" --project "$PROJECT_ID" --quiet || true
                 fi
             done
         fi
@@ -95,7 +99,7 @@ cleanup_resources() {
 }
 
 echo "🚀 Starting ContentOG Cloud Deployment ($SCOPE)"
-cleanup_resources
+cleanup_resources || echo "⚠️  Warning: Cleanup failed, proceeding anyway..."
 
 # 3. Build and Push Images
 # Set skip flags for Cloud Build

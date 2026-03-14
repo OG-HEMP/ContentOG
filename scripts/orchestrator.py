@@ -91,13 +91,30 @@ class Orchestrator:
     def complete_run(self, run_id: str, status: str = "completed", error: Optional[str] = None):
         """Mark a run as completed."""
         try:
+            # Aggregate counts before completing
+            counts = self.db._query_row(
+                """
+                SELECT 
+                    (SELECT COUNT(*) FROM articles a 
+                     JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword 
+                     WHERE kt.run_id = %s) as article_count,
+                    (SELECT COUNT(DISTINCT topic_id) FROM article_topics at
+                     JOIN articles a ON at.article_id = a.id
+                     JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
+                     WHERE kt.run_id = %s) as cluster_count
+                """,
+                (run_id, run_id)
+            )
+            
             self.db._execute(
                 """
                 UPDATE runs
-                SET status = %s, completed_at = %s, error_summary = %s
+                SET status = %s, completed_at = %s, error_summary = %s,
+                    article_count = %s, cluster_count = %s
                 WHERE id = %s
                 """,
-                (status, datetime.utcnow().isoformat(), error, run_id)
+                (status, datetime.utcnow().isoformat(), error, 
+                 counts.get("article_count", 0), counts.get("cluster_count", 0), run_id)
             )
         except Exception as exc:
-            logger.error("Failed to update run status: %s", exc)
+            logger.error("Failed to update run status and counts: %s", exc)

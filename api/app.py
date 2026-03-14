@@ -93,7 +93,7 @@ def run_pipeline_task(run_id: str, keywords: List[str], target_domain: Optional[
         success_count = 0
         with ThreadPoolExecutor(max_workers=min(len(keywords), 10)) as executor:
             futures = [
-                executor.submit(_run_single_keyword, kw, task_ids[kw], orch)
+                executor.submit(_run_single_keyword, kw, task_id=task_ids[kw], orch=orch, run_id=run_id, target_domain=target_domain)
                 for kw in keywords
             ]
             for future in futures:
@@ -132,13 +132,13 @@ def retry_task(task_id: str, background_tasks: BackgroundTasks) -> Dict[str, str
     def retry_worker():
         try:
             logger.info(f"Manual retry START: {keyword} (Task: {task_id})")
-            _run_single_keyword(keyword, task_id, orch)
+            # Fetch target_domain from run metadata before running the keyword
+            run_info = _query_rows("SELECT metadata FROM runs WHERE id = %s", (run_id,))
+            td = run_info[0]["metadata"].get("target_domain") if run_info and run_info[0].get("metadata") else None
+            _run_single_keyword(keyword, task_id=task_id, orch=orch, run_id=run_id, target_domain=td)
             # Re-run global analysis to update the artifacts for this run
             logger.info(f"Manual retry SUCCESS for {keyword}. Refreshing global analysis for run {run_id}")
-            # Fetch target_domain from run metadata if possible
-            run_info = _query_rows("SELECT metadata FROM runs WHERE id = %s", (run_id,))
-            target_domain = run_info[0]["metadata"].get("target_domain") if run_info and run_info[0].get("metadata") else None
-            _run_global_analysis(run_id, target_domain=target_domain)
+            _run_global_analysis(run_id, target_domain=td)
         except Exception as e:
             logger.error(f"Manual retry FAILURE for {keyword}: {e}")
             pass # Already updated in DB by _run_single_keyword
@@ -190,6 +190,8 @@ def get_run_tasks(run_id: str) -> List[Dict[str, Any]]:
 
 @app.get("/topics")
 def list_topics() -> List[Dict[str, Any]]:
+    if not _table_exists("public.topics"):
+        return []
     rows = _query_rows(
         """
         SELECT id, name, description
@@ -200,38 +202,55 @@ def list_topics() -> List[Dict[str, Any]]:
 
 
 @app.get("/coverage")
-def coverage(run_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
+def coverage(run_id: str = None, topic_id: str = None):
     if not _table_exists("public.topic_domain_coverage"):
-        return {}
-    
+        # Return empty dict for grouped requests, empty list for single-topic requests
+        return [] if topic_id else {}
+
+    params: List[Any] = []
+    where_clauses: List[str] = []
+
+    if topic_id:
+        where_clauses.append("tdc.topic_id = %s")
+        params.append(topic_id)
+
     if run_id:
-        # Filter coverage to topics that have articles in this specific run
-        sql = """
-            SELECT tdc.topic_id, t.name as topic_name, tdc.domain, tdc.article_count, tdc.avg_rank
-            FROM topic_domain_coverage tdc
-            JOIN topics t ON tdc.topic_id = t.id
-            WHERE tdc.topic_id IN (
+        where_clauses.append("""
+            tdc.topic_id IN (
                 SELECT DISTINCT at.topic_id
                 FROM article_topics at
                 JOIN articles a ON at.article_id = a.id
                 JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
                 WHERE kt.run_id = %s
-            );
-        """
-        rows = _query_rows(sql, (run_id,))
-    else:
-        rows = _query_rows(
-            """
-            SELECT tdc.topic_id, t.name as topic_name, tdc.domain, tdc.article_count, tdc.avg_rank
-            FROM topic_domain_coverage tdc
-            JOIN topics t ON tdc.topic_id = t.id;
-            """
-        )
-    
+            )
+        """)
+        params.append(run_id)
+
+    where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    sql = f"""
+        SELECT tdc.topic_id, t.name as topic_name, tdc.domain, tdc.article_count, tdc.avg_rank
+        FROM topic_domain_coverage tdc
+        JOIN topics t ON tdc.topic_id = t.id
+        {where_sql};
+    """
+    rows = _query_rows(sql, tuple(params))
+
+    # When requesting a specific topic, return a flat list directly
+    if topic_id:
+        return [
+            {
+                "topic_name": row.get("topic_name"),
+                "domain": row.get("domain"),
+                "article_count": row.get("article_count"),
+                "avg_rank": row.get("avg_rank"),
+            }
+            for row in rows
+        ]
+
     grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        topic_id = str(row.get("topic_id"))
-        grouped[topic_id].append(
+        tid = str(row.get("topic_id"))
+        grouped[tid].append(
             {
                 "topic_name": row.get("topic_name"),
                 "domain": row.get("domain"),
@@ -244,6 +263,8 @@ def coverage(run_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
 
 @app.get("/topic-graph")
 def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
+    if not _table_exists("public.topics"):
+        return {"nodes": [], "edges": []}
     if run_id:
         topics = _query_rows(
             """
@@ -294,6 +315,8 @@ def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
 
 @app.get("/strategies")
 def strategies(topic_id: str = None, run_id: str = None) -> List[Dict[str, Any]]:
+    if not _table_exists("public.pillar_strategies"):
+        return []
     params = []
     where_clauses = []
     
@@ -352,6 +375,7 @@ def list_articles(topic_id: str = None, run_id: str = None) -> List[Dict[str, An
     
     sql = f"""
         SELECT DISTINCT a.id, a.url, a.title, a.word_count, a.serp_rank, a.publish_date,
+               CASE WHEN a.embedding IS NOT NULL THEN true ELSE false END as has_embedding,
                substring(a.content from 1 for 200) as summary,
                split_part(a.url, '/', 3) as domain
         FROM articles a

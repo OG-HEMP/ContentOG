@@ -12,9 +12,14 @@ _API_URL = "https://api.openai.com/v1/embeddings"
 def generate_embedding(text: str) -> List[float]:
     """Generate OpenAI embeddings using centralized settings."""
     
+    # Truncate text to avoid token limits (Safe estimate for 8k tokens)
+    clean_text = (text or "").strip()
+    if len(clean_text) > 25000:
+        clean_text = clean_text[:25000]
+
     payload = {
         "model": settings.embeddings_model,
-        "input": text or "",
+        "input": clean_text,
     }
     
     try:

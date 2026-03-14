@@ -54,7 +54,7 @@ export default function GraphCanvas() {
 
     const targetDomain = currentRun?.target_domain?.toLowerCase() || 'contentog.com';
 
-    coverageMap.current = Object.entries(rawCoverage).reduce((acc, [topicId, data]) => {
+    coverageMap.current = Object.entries(coverageData || {}).reduce((acc, [topicId, data]) => {
       const sorted = [...(data || [])].sort((a, b) => (b.article_count || 0) - (a.article_count || 0));
       if (!sorted.length) {
         acc[topicId] = 'mixed';

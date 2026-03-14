@@ -58,7 +58,8 @@ def extract_paa_questions(keyword: str) -> list:
 
     questions = _extract_questions(payload)
     if not questions:
-        raise RuntimeError(f"No PAA questions returned for keyword '{keyword}'.")
+        logger.warning(f"No PAA questions returned for keyword '{keyword}'. Continuing without PAA.")
+        return []
 
     logger.info("PAA extracted %d questions for keyword '%s'", len(questions), keyword)
     return questions
