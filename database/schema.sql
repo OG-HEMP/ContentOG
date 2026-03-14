@@ -113,12 +113,22 @@ CREATE TABLE IF NOT EXISTS keyword_tasks (
     run_id UUID REFERENCES runs(id),
     keyword TEXT NOT NULL,
     status TEXT DEFAULT 'pending',
+    status_message TEXT,
     started_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
     error_message TEXT,
     retry_count INT DEFAULT 0,
     metadata JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Topic Outlines (generated pillar content outlines)
+CREATE TABLE IF NOT EXISTS topic_outlines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    topic_id UUID REFERENCES topics(id) UNIQUE,
+    outline_json JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Performance Indexes

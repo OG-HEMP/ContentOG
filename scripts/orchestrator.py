@@ -92,19 +92,20 @@ class Orchestrator:
         """Mark a run as completed."""
         try:
             # Aggregate counts before completing
-            counts = self.db._query_row(
+            counts = self.db._execute(
                 """
-                SELECT 
-                    (SELECT COUNT(*) FROM articles a 
-                     JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword 
+                SELECT
+                    (SELECT COUNT(*) FROM articles a
+                     JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
                      WHERE kt.run_id = %s) as article_count,
                     (SELECT COUNT(DISTINCT topic_id) FROM article_topics at
                      JOIN articles a ON at.article_id = a.id
                      JOIN keyword_tasks kt ON a.serp_keyword = kt.keyword
                      WHERE kt.run_id = %s) as cluster_count
                 """,
-                (run_id, run_id)
-            )
+                (run_id, run_id),
+                fetchone=True
+            ) or {}
             
             self.db._execute(
                 """

@@ -187,34 +187,25 @@ def _persist_topic_graph_fallback(topic_records: List[Dict[str, object]]):
     if len(topic_records) < 2:
         return
 
-    similarity_edges = 0
-    fallback_edges = 0
-
-    for i in range(len(topic_records)):
-        for j in range(i + 1, len(topic_records)):
-            left = topic_records[i]
-            right = topic_records[j]
-            overlap = left["keywords"].intersection(right["keywords"])
-            if overlap:
-                similarity_edges += 1
-
-    if similarity_edges > 0:
+    # If any pair of topics already shares keywords, natural edges exist — skip fallback
+    has_overlap = any(
+        topic_records[i]["keywords"].intersection(topic_records[j]["keywords"])
+        for i in range(len(topic_records))
+        for j in range(i + 1, len(topic_records))
+    )
+    if has_overlap:
         return
 
+    # No natural connections — connect all topic pairs with a low-weight fallback edge
+    # so the Topic Universe graph has visible structure
+    fallback_edges = 0
     for i in range(len(topic_records)):
         for j in range(i + 1, len(topic_records)):
-            left = topic_records[i]
-            right = topic_records[j]
-            overlap = left["keywords"].intersection(right["keywords"])
-            same_cluster = left.get("cluster_id") == right.get("cluster_id")
-            if not overlap and not same_cluster:
-                continue
-
             db_client.save_topic_relationship(
-                str(left["topic_id"]),
-                str(right["topic_id"]),
+                str(topic_records[i]["topic_id"]),
+                str(topic_records[j]["topic_id"]),
                 relationship_type="keyword_overlap",
-                weight=0.3,
+                weight=0.2,
             )
             fallback_edges += 1
 
@@ -380,7 +371,7 @@ def _add_semantic_centroid_edges(topic_records: List[Dict[str, object]]):
             # Simple dot product as they are likely normalized from OpenAI
             dot = sum(a * b for a, b in zip(vec_a, vec_b))
             
-            if dot > 0.85: # High semantic similarity threshold
+            if dot > 0.70: # Lowered from 0.85 to increase semantic connection density
                 db_client.save_topic_relationship(
                     topic_id=id_a,
                     related_topic_id=id_b,

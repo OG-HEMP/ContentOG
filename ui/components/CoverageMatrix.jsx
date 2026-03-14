@@ -10,9 +10,12 @@ function gapColor(score) {
   return 'bg-green-700';
 }
 
-export default function CoverageMatrix() {
-  const { topics, runId, currentRun } = useRun();
-  const { data, loading: apiLoading, error: apiError } = useApiData('/coverage', runId, { deps: [runId] });
+export default function CoverageMatrix({ topicId }) {
+  const { runId, currentRun } = useRun();
+  const { data, loading: apiLoading, error: apiError } = useApiData('/coverage', runId, { 
+    deps: [runId, topicId],
+    params: topicId ? { topic_id: topicId } : {}
+  });
   const [sortBy, setSortBy] = useState('gap_score');
   const [yourDomain, setYourDomain] = useState('contentog.com');
   const [loading, setLoading] = useState(false);
@@ -32,10 +35,7 @@ export default function CoverageMatrix() {
     setLoading(true);
     setError(null);
     try {
-      // Future: Trigger a dedicated gap analysis endpoint if needed
-      // For now, we rely on the pre-calculated coverage in the topics
       console.log('Calculating gap for:', yourDomain);
-      // Simulate API call delay for UX
       await new Promise(r => setTimeout(r, 800));
     } catch (err) {
       setError(err.message);
@@ -48,9 +48,19 @@ export default function CoverageMatrix() {
     if (!data || typeof data !== 'object') return [];
     
     return Object.entries(data).map(([topicId, stats]) => {
-      const topicName = stats[0]?.topic_name || `Topic ${topicId.slice(0, 4)}`;
-      const yourDomainStats = stats.find(s => s.domain.toLowerCase().includes(yourDomain.toLowerCase())) || {};
-      const competitors = stats.filter(s => !s.domain.toLowerCase().includes(yourDomain.toLowerCase()));
+      // stats might be an object if API returned a list and and Object.entries was used on it,
+      // but api/app.py returns a dict of lists. Still, let's be safe.
+      const statsArray = Array.isArray(stats) ? stats : [];
+      
+      const topicName = statsArray[0]?.topic_name || `Topic ${topicId.slice(0, 8)}`;
+      
+      const yourDomainStats = statsArray.find(s => 
+        s.domain?.toLowerCase().includes(yourDomain?.toLowerCase() || '')
+      ) || {};
+      
+      const competitors = statsArray.filter(s => 
+        !s.domain?.toLowerCase().includes(yourDomain?.toLowerCase() || '')
+      );
       
       const yourCount = yourDomainStats.article_count || 0;
       const competitorAvg = competitors.length > 0 
@@ -69,8 +79,21 @@ export default function CoverageMatrix() {
         competitor_b_name: competitors[1]?.domain || 'Competitor B',
         gap_score: gapScore
       };
-    }).sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
+    }).sort((a, b) => {
+      if (sortBy === 'gap_score') return (b.gap_score || 0) - (a.gap_score || 0);
+      if (sortBy === 'your_domain_count') return (b.your_domain_count || 0) - (a.your_domain_count || 0);
+      return 0;
+    });
   }, [data, sortBy, yourDomain]);
+
+  if (apiError) {
+    return (
+      <section className="panel p-8 text-center">
+        <p className="text-red-400">Coverage Matrix Unavailable</p>
+        <p className="text-sm text-slate-500 mt-2">{apiError.message || 'API connection failed'}</p>
+      </section>
+    );
+  }
 
   return (
     <section className="panel p-4">
@@ -96,12 +119,12 @@ export default function CoverageMatrix() {
                 >
                   {loading ? (
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  ) : 'Submit'}
+                  ) : 'Update'}
                 </button>
               </div>
             </div>
             <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
-              <select className="rounded bg-slate-800 px-2 py-1 text-sm border border-slate-700" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <select className="rounded bg-slate-800 px-2 py-1 text-sm border border-slate-700 text-white" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
                 <option value="gap_score">Sort by Gap Score</option>
                 <option value="your_domain_count">Sort by Your Domain</option>
               </select>
@@ -109,53 +132,54 @@ export default function CoverageMatrix() {
           </div>
         </div>
       </div>
-      {(apiLoading || loading) && <p className="animate-pulse text-sm text-slate-400">Calculating coverage...</p>}
-      {(apiError || error) && <p className="text-red-300">API unavailable</p>}
-      <div className="overflow-auto">
+      
+      {(apiLoading || loading) && <p className="animate-pulse text-sm text-slate-400 mb-4">Analyzing competitor coverage...</p>}
+      
+      <div className="overflow-auto max-h-[500px]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 bg-slate-900 shadow-sm z-10">
             <tr className="text-left text-slate-300 border-b border-slate-800">
-              <th className="pb-2">Keyword Topic</th>
-              <th className="pb-2">Your Domain</th>
-              <th className="pb-2">Competitor A</th>
-              <th className="pb-2">Competitor B</th>
-              <th className="pb-2">Gap Score</th>
+              <th className="pb-3 px-2">Topic Cluster</th>
+              <th className="pb-3 px-2">Your Profile</th>
+              <th className="pb-3 px-2">Competitor A</th>
+              <th className="pb-3 px-2">Competitor B</th>
+              <th className="pb-3 px-2">Gap Score</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-800/50">
             {rows.length > 0 ? (
               rows.map((row) => (
-                <tr key={row.topic_id} className="border-t border-slate-800/50 hover:bg-slate-800/20 transition-colors">
-                  <td className="py-3 pr-4 font-medium text-slate-200">{row.topic_name}</td>
-                  <td>
+                <tr key={row.topic_id} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="py-4 px-2 font-medium text-slate-100 max-w-[200px] truncate" title={row.topic_name}>{row.topic_name}</td>
+                  <td className="px-2">
                     <div className="flex flex-col">
-                      <span className="font-semibold text-white">{row.your_domain_count}</span>
-                      <span className="text-[10px] text-slate-500 uppercase">{userDomain}</span>
+                      <span className="font-bold text-white text-base">{row.your_domain_count}</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-tight">{yourDomain}</span>
                     </div>
                   </td>
-                  <td>
+                  <td className="px-2">
                     <div className="flex flex-col">
                       <span className="font-medium text-slate-300">{row.competitor_a_count}</span>
                       <span className="text-[10px] text-slate-500 truncate max-w-[100px]" title={row.competitor_a_name}>{row.competitor_a_name}</span>
                     </div>
                   </td>
-                  <td>
+                  <td className="px-2">
                     <div className="flex flex-col">
                       <span className="font-medium text-slate-300">{row.competitor_b_count}</span>
                       <span className="text-[10px] text-slate-500 truncate max-w-[100px]" title={row.competitor_b_name}>{row.competitor_b_name}</span>
                     </div>
                   </td>
-                  <td>
-                    <span className={`inline-block min-w-[2.5rem] text-center rounded px-2 py-1 font-bold ${gapColor(row.gap_score || 0)}`}>
-                      {row.gap_score}
+                  <td className="px-2">
+                    <span className={`inline-flex items-center justify-center min-w-[3rem] px-2 py-1 rounded text-xs font-black uppercase tracking-wider ${gapColor(row.gap_score)}`}>
+                      {row.gap_score}% Gap
                     </span>
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="py-10 text-center text-slate-500 italic">
-                  No coverage data available yet. Select a run with completed topic extraction to view the matrix.
+                <td colSpan={5} className="py-12 text-center text-slate-500 italic">
+                  {apiLoading ? 'Collecting data...' : 'No coverage data found for this run.'}
                 </td>
               </tr>
             )}

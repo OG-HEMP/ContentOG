@@ -1,12 +1,20 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useRun } from '@/components/RunContext';
 import { useApiData } from '@/hooks/useApiData';
 
 export default function PillarBuilderPage() {
   const { runId } = useRun();
-  const { data, loading, error } = useApiData('/strategies', runId, { deps: [runId] });
+  const searchParams = useSearchParams();
+  const topicIdFromUrl = searchParams.get('topic_id');
+  const { data: allStrategies, loading, error } = useApiData('/strategies', runId, { deps: [runId] });
+
+  // If a topic_id was passed from Topic Universe, show only that topic; otherwise show all
+  const data = topicIdFromUrl && Array.isArray(allStrategies)
+    ? allStrategies.filter(s => s.topic_id === topicIdFromUrl)
+    : allStrategies;
   const [outlines, setOutlines] = useState({});
   const [generating, setGenerating] = useState({});
 

@@ -266,7 +266,9 @@ def coverage(run_id: str = None, topic_id: str = None):
 def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
     if not _table_exists("public.topics"):
         return {"nodes": [], "edges": []}
+    
     if run_id:
+        # 1. Fetch topics associated with the run
         topics = _query_rows(
             """
             SELECT DISTINCT t.id AS topic_id, t.name AS topic_name
@@ -278,6 +280,23 @@ def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
             """,
             (run_id,)
         )
+        
+        # 2. Fetch keyword anchor nodes (always show if run has tasks)
+        kw_rows = _query_rows(
+            "SELECT DISTINCT keyword FROM keyword_tasks WHERE run_id = %s",
+            (run_id,)
+        )
+        keyword_nodes = [
+            {
+                "id": f"kw_{row['keyword'].replace(' ', '_')}",
+                "topic_name": row["keyword"].upper(),
+                "type": "keyword",
+                "size": 10,
+            }
+            for row in kw_rows
+        ]
+        
+        # 3. Fetch topic-to-topic semantic relationships
         relationships = _query_rows(
             """
             SELECT tr.topic_id, tr.related_topic_id, tr.weight
@@ -287,22 +306,34 @@ def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
             """,
             (run_id, run_id)
         )
-    else:
-        topics = _query_rows(
+        
+        # 4. Fetch keyword-to-topic edges
+        kw_edge_rows = _query_rows(
             """
-            SELECT id AS topic_id, name AS topic_name
-            FROM topics;
-            """
+            SELECT DISTINCT kt.keyword, t.id AS topic_id
+            FROM keyword_tasks kt
+            JOIN articles a ON a.serp_keyword = kt.keyword
+            JOIN article_topics at ON at.article_id = a.id
+            JOIN topics t ON t.id = at.topic_id
+            WHERE kt.run_id = %s;
+            """,
+            (run_id,)
         )
-        if _table_exists("public.topic_relationships"):
-            relationships = _query_rows(
-                """
-                SELECT topic_id, related_topic_id, weight
-                FROM topic_relationships;
-                """
-            )
-        else:
-            relationships = []
+        keyword_edges = [
+            {
+                "source": f"kw_{row['keyword'].replace(' ', '_')}",
+                "target": str(row["topic_id"]),
+                "weight": 1.0,
+            }
+            for row in kw_edge_rows
+        ]
+    else:
+        # Global view
+        topics = _query_rows("SELECT id AS topic_id, name AS topic_name FROM topics LIMIT 100")
+        relationships = _query_rows("SELECT topic_id, related_topic_id, weight FROM topic_relationships") if _table_exists("public.topic_relationships") else []
+        keyword_nodes = []
+        keyword_edges = []
+
     edges = [
         {
             "source": row.get("topic_id"),
@@ -310,8 +341,54 @@ def topic_graph(run_id: str = None) -> Dict[str, Sequence[Dict[str, Any]]]:
             "weight": row.get("weight"),
         }
         for row in relationships
-    ]
-    return {"nodes": topics, "edges": edges}
+    ] + keyword_edges
+    
+    return {"nodes": topics + keyword_nodes, "edges": edges}
+
+@app.post("/runs/{run_id}/reprocess")
+def reprocess_run(run_id: str, background_tasks: BackgroundTasks) -> Dict[str, str]:
+    """Manually trigger global analysis (clustering/strategy) for an existing run."""
+    from scripts.run_pipeline import _run_global_analysis
+    
+    run_check = _query_rows("SELECT id, metadata FROM runs WHERE id = %s", (run_id,))
+    if not run_check:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    target_domain = run_check[0]["metadata"].get("target_domain") if run_check[0].get("metadata") else None
+    
+    def worker():
+        try:
+            logger.info(f"Manual reprocessing START for run: {run_id}")
+            _run_global_analysis(run_id, target_domain=target_domain)
+            logger.info(f"Manual reprocessing SUCCESS for run: {run_id}")
+        except Exception as e:
+            logger.error(f"Manual reprocessing FAILED for run {run_id}: {e}")
+
+    background_tasks.add_task(worker)
+    return {"message": f"Global analysis regeneration started for run: {run_id}"}
+
+@app.post("/maintenance/re-embed")
+def re_embed_articles(background_tasks: BackgroundTasks) -> Dict[str, str]:
+    """Maintenance endpoint to find articles without embeddings and process them."""
+    from database.db_client import db_client
+    from agents.embedding_agent.embedding_agent import EmbeddingAgent
+    
+    def worker():
+        try:
+            articles = _query_rows("SELECT id as article_id, url, content FROM articles WHERE embedding IS NULL AND content IS NOT NULL LIMIT 500")
+            if not articles:
+                logger.info("No articles found needing embeddings.")
+                return
+                
+            logger.info(f"Starting maintenance embedding for {len(articles)} articles.")
+            agent = EmbeddingAgent()
+            agent.run({"articles": articles})
+            logger.info("Maintenance embedding complete.")
+        except Exception as e:
+            logger.error(f"Maintenance embedding failed: {e}")
+
+    background_tasks.add_task(worker)
+    return {"message": "Catch-up embedding process started in background."}
 
 
 @app.get("/strategies")

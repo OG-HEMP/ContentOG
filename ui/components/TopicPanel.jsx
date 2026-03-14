@@ -130,13 +130,19 @@ export default function TopicPanel() {
         <div className="p-4 bg-slate-900/60 border-t border-slate-800 grid grid-cols-2 gap-2">
           <Link 
             href={`/article-explorer?topic_id=${selected.id}`}
+            className="text-center text-[11px] font-bold uppercase py-2 bg-slate-800 rounded text-slate-200 hover:bg-slate-700 transition-colors"
+          >
+            Resources
+          </Link>
+          <Link 
+            href={`/coverage-matrix?topic_id=${selected.id}`}
             className="text-center text-[11px] font-bold uppercase py-2 bg-indigo-600 rounded text-white hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-900/20"
           >
-            Explore Articles
+            View Gaps
           </Link>
           <Link 
             href={`/pillar-builder?topic_id=${selected.id}`}
-            className="text-center text-[11px] font-bold uppercase py-2 bg-slate-800 rounded text-slate-200 hover:bg-slate-700 transition-colors"
+            className="col-span-2 text-center text-[11px] font-bold uppercase py-2 bg-slate-800 rounded text-slate-200 hover:bg-slate-700 transition-colors"
           >
             Build Pillar
           </Link>

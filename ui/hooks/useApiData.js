@@ -24,7 +24,7 @@ export function useApiData(path, runId, { deps = [], refreshInterval = null } = 
       }
       
       try {
-        const result = await apiGet(path, { runId, signal: controller.signal });
+        const result = await apiGet(path, { runId, signal: controller.signal, params: options.params });
         setData(result);
         
         if (refreshInterval && !controller.signal.aborted) {
