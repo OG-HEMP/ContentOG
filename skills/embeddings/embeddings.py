@@ -9,11 +9,33 @@ logger = logging.getLogger(__name__)
 _API_URL = "https://api.openai.com/v1/embeddings"
 
 
+_LOCAL_MODEL = None
+
+def _get_local_model():
+    global _LOCAL_MODEL
+    if _LOCAL_MODEL is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            model_name = settings.embeddings_model if "embedding" not in settings.embeddings_model else "all-MiniLM-L6-v2"
+            logger.info(f"Loading local embedding model: {model_name}...")
+            _LOCAL_MODEL = SentenceTransformer(model_name)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load local embedding model: {exc}")
+    return _LOCAL_MODEL
+
 def generate_embedding(text: str) -> List[float]:
-    """Generate OpenAI embeddings using centralized settings."""
-    
-    # Truncate text to avoid token limits (Safe estimate for 8k tokens)
+    """Generate embeddings using the configured provider (openai or local)."""
     clean_text = (text or "").strip()
+    if not clean_text:
+        return [0.0] * 1536 # Fallback if empty
+        
+    if settings.embeddings_provider.lower() == "local":
+        model = _get_local_model()
+        vector = model.encode(clean_text)
+        return [float(v) for v in vector]
+
+    # OpenAI Provider (Default)
+    # Truncate text to avoid token limits (Safe estimate for 8k tokens)
     if len(clean_text) > 25000:
         clean_text = clean_text[:25000]
 
@@ -35,11 +57,9 @@ def generate_embedding(text: str) -> List[float]:
             retries=settings.embeddings_retry_attempts,
             backoff_seconds=settings.embeddings_backoff_seconds,
         )
-    except Exception as exc:
-        raise RuntimeError(f"OpenAI embeddings request failed: {exc}") from exc
-
-    try:
         vector = result["data"][0]["embedding"]
+        return [float(v) for v in vector]
     except Exception as exc:
-        raise RuntimeError(f"Unexpected embeddings response shape: {result}") from exc
-    return [float(v) for v in vector]
+        if "insufficient_quota" in str(exc) or "429" in str(exc):
+            logger.warning("OpenAI quota exceeded. Recommend switching EMBEDDINGS_PROVIDER to 'local'.")
+        raise RuntimeError(f"OpenAI embeddings request failed: {exc}") from exc

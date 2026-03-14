@@ -10,6 +10,21 @@ logger = logging.getLogger(__name__)
 _CHAT_URL = "https://api.openai.com/v1/chat/completions"
 
 
+def load_lm_studio_model(model_id: str) -> Dict[str, Any]:
+    """Manually trigger model loading in LM Studio if required."""
+    base_url = settings.lm_studio_base_url.rstrip("/")
+    # Remove /v1 if present for the loading endpoint which often sits at /api/v1 or just /
+    api_dir = "/api/v1" if "/v1" in base_url else ""
+    load_url = f"{base_url.split('/v1')[0]}{api_dir}/models/load"
+    
+    logger.info(f"Attempting to load LM Studio model: {model_id} via {load_url}")
+    return request_json(
+        load_url,
+        method="POST",
+        payload={"model": model_id},
+        timeout=120
+    )
+
 def chat_completion_json(
     messages: List[Dict[str, str]],
     *,
@@ -32,24 +47,35 @@ def chat_completion_json(
         "messages": messages,
     }
     
+    provider = settings.llm_provider.lower()
+    
+    if provider == "lm_studio":
+        # LM Studio base URL should usually end with /v1
+        base_url = settings.lm_studio_base_url.rstrip("/")
+        api_url = f"{base_url}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+    else:
+        api_url = _CHAT_URL
+        headers = {
+            "Authorization": f"Bearer {settings.openai_api_key}",
+            "Content-Type": "application/json",
+        }
+
     try:
         response = request_json(
-            _CHAT_URL,
+            api_url,
             method="POST",
-            headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             payload=payload,
             timeout=timeout,
             retries=retries,
             backoff_seconds=backoff,
         )
     except Exception as exc:
-        raise RuntimeError(f"OpenAI chat completion failed: {exc}") from exc
+        raise RuntimeError(f"{provider.upper()} chat completion failed at {api_url}: {exc}") from exc
 
     try:
         content = response["choices"][0]["message"]["content"]
         return json.loads(content)
     except Exception as exc:
-        raise RuntimeError(f"Unexpected OpenAI chat completion response: {response}") from exc
+        raise RuntimeError(f"Unexpected {provider.upper()} response structure: {response}") from exc

@@ -60,6 +60,8 @@ class YAMLSettingsSource(PydanticBaseSettingsSource):
         # LLM
         llm = raw.get("llm", {})
         d["openai_strategy_model"] = llm.get("model_name")
+        d["llm_provider"] = llm.get("provider")
+        d["lm_studio_base_url"] = llm.get("base_url")
         d["llm_timeout"] = llm.get("timeout")
         
         return {k: v for k, v in d.items() if v is not None}
@@ -179,6 +181,7 @@ class Settings(BaseSettings):
     serp_retry_attempts: int = Field(default=3, alias="SERP_RETRY_ATTEMPTS")
     serp_backoff_seconds: float = Field(default=1.0, alias="SERP_BACKOFF_SECONDS")
 
+    embeddings_provider: str = Field(default="openai", alias="EMBEDDINGS_PROVIDER")
     embeddings_model: str = Field(default="text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL")
     embeddings_timeout: int = Field(default=60, alias="EMBEDDINGS_TIMEOUT")
     embeddings_retry_attempts: int = Field(default=3, alias="EMBEDDINGS_RETRY_ATTEMPTS")
@@ -191,6 +194,8 @@ class Settings(BaseSettings):
     llm_timeout: int = Field(default=90, alias="LLM_TIMEOUT")
     llm_retry_attempts: int = Field(default=3, alias="LLM_RETRY_ATTEMPTS")
     llm_backoff_seconds: float = Field(default=1.0, alias="LLM_BACKOFF_SECONDS")
+    llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
+    lm_studio_base_url: str = Field(default="http://192.168.1.34:1234", alias="LM_STUDIO_BASE_URL")
 
     keyword_limit: int = Field(default=3, alias="CONTENT_OG_KEYWORD_LIMIT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")

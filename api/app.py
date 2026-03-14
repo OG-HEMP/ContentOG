@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from database.db_client import db_client
 from scripts.orchestrator import Orchestrator
+from skills.strategy_generation.outline_generation import generate_topic_outline
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -353,6 +354,54 @@ def strategies(topic_id: str = None, run_id: str = None) -> List[Dict[str, Any]]
         """
         rows = _query_rows(sql, tuple(params))
     return rows
+
+@app.get("/topics/{topic_id}/outline")
+def get_outline(topic_id: str):
+    outline = db_client.get_topic_outline(topic_id)
+    if not outline:
+        raise HTTPException(status_code=404, detail="Outline not found")
+    return outline
+
+@app.post("/topics/{topic_id}/outline")
+async def create_outline(topic_id: str):
+    # 1. Try to fetch existing outline
+    existing = db_client.get_topic_outline(topic_id)
+    if existing:
+        return existing
+
+    # 2. Fetch Topic Details
+    topic_data = db_client._execute(
+        "SELECT title, description FROM pillar_strategies WHERE topic_id = %s",
+        (topic_id,),
+        fetchone=True
+    )
+    if not topic_data:
+        topic_data = db_client._execute(
+            "SELECT name as title FROM topics WHERE id = %s",
+            (topic_id,),
+            fetchone=True
+        )
+        if not topic_data:
+            raise HTTPException(status_code=404, detail="Topic cluster not found")
+        topic_data["description"] = "Pillar content strategy"
+
+    # 3. Fetch Articles for Context
+    articles = db_client.fetch_articles_by_topic(topic_id, limit=5)
+    
+    # 4. Generate Outline
+    try:
+        outline = generate_topic_outline(
+            topic_data["title"] or "Strategic Pillar",
+            topic_data["description"] or "",
+            articles
+        )
+        
+        # 5. Save and return
+        db_client.insert_topic_outline(topic_id, outline)
+        return outline
+    except Exception as exc:
+        logger.error(f"Outline generation failed for topic {topic_id}: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/articles")

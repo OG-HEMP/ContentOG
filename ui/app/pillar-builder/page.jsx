@@ -1,11 +1,33 @@
 'use client';
 
+import { useState } from 'react';
 import { useRun } from '@/components/RunContext';
 import { useApiData } from '@/hooks/useApiData';
 
 export default function PillarBuilderPage() {
   const { runId } = useRun();
   const { data, loading, error } = useApiData('/strategies', runId, { deps: [runId] });
+  const [outlines, setOutlines] = useState({});
+  const [generating, setGenerating] = useState({});
+
+  const handleGenerateOutline = async (topicId) => {
+    if (generating[topicId]) return;
+    
+    setGenerating(prev => ({ ...prev, [topicId]: true }));
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8080'}/topics/${topicId}/outline`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Generation failed');
+      const outline = await response.json();
+      setOutlines(prev => ({ ...prev, [topicId]: outline }));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate outline. Please try again.');
+    } finally {
+      setGenerating(prev => ({ ...prev, [topicId]: false }));
+    }
+  };
 
   return (
     <section className="space-y-6">
@@ -41,11 +63,40 @@ export default function PillarBuilderPage() {
                       </p>
                    </div>
                 </div>
+
+                {outlines[item.topic_id] && (
+                  <div className="mt-4 p-4 rounded bg-indigo-500/10 border border-indigo-500/20 space-y-3 animate-in fade-in slide-in-from-top-2">
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-tight">Generated Outline</h4>
+                    <p className="text-[11px] font-bold text-white">{outlines[item.topic_id].title}</p>
+                    <div className="text-[10px] text-slate-400 space-y-1 max-h-40 overflow-y-auto">
+                      {outlines[item.topic_id].sections?.map((s, idx) => (
+                        <div key={idx}>• {s.heading}</div>
+                      ))}
+                    </div>
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(JSON.stringify(outlines[item.topic_id], null, 2))}
+                      className="text-[9px] text-indigo-300 hover:text-white transition-colors uppercase font-bold"
+                    >
+                      Copy JSON to Clipboard
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 bg-slate-950/50 border-t border-slate-800 grid grid-cols-2 gap-2">
-                 <button className="text-[10px] font-bold uppercase py-2 bg-indigo-600 rounded text-white hover:bg-indigo-500 transition-colors">Generate Outline</button>
-                 <button className="text-[10px] font-bold uppercase py-2 bg-slate-800 rounded text-slate-300 hover:bg-slate-700 transition-colors">Research Links</button>
+                 <button 
+                   onClick={() => handleGenerateOutline(item.topic_id)}
+                   disabled={generating[item.topic_id]}
+                   className={`text-[10px] font-bold uppercase py-2 rounded text-white transition-colors ${generating[item.topic_id] ? 'bg-indigo-800 cursor-not-allowed animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+                 >
+                   {generating[item.topic_id] ? 'Generating...' : 'Generate Outline'}
+                 </button>
+                 <button 
+                    onClick={() => window.open(`/article-explorer?topic_id=${item.topic_id}`)}
+                    className="text-[10px] font-bold uppercase py-2 bg-slate-800 rounded text-slate-300 hover:bg-slate-700 transition-colors"
+                 >
+                    Research Links
+                 </button>
               </div>
             </article>
           ))

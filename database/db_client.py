@@ -25,6 +25,7 @@ class DBClient:
             "cluster_articles": [],
             "topic_relationships": [],
             "topic_domain_coverage": [],
+            "topic_outlines": [],
         }
 
     def _get_pool(self):
@@ -467,6 +468,59 @@ class DBClient:
         )
         if row:
             return row
+
+    def get_topic_outline(self, topic_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch the generated outline for a specific topic."""
+        row = self._execute(
+            "SELECT outline_json FROM topic_outlines WHERE topic_id = %s",
+            (topic_id,),
+            fetchone=True
+        )
+        if row:
+            return row["outline_json"] if isinstance(row["outline_json"], dict) else json.loads(row["outline_json"])
+
+        existing = next((o for o in self._memory["topic_outlines"] if o.get("topic_id") == topic_id), None)
+        return existing.get("outline_json") if existing else None
+
+    def insert_topic_outline(self, topic_id: str, outline_json: Dict[str, Any]):
+        """Persist or update a generated outline."""
+        row = self._execute(
+            """
+            INSERT INTO topic_outlines (topic_id, outline_json, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (topic_id) DO UPDATE
+            SET outline_json = EXCLUDED.outline_json,
+                updated_at = NOW()
+            RETURNING id;
+            """,
+            (topic_id, json.dumps(outline_json)),
+            fetchone=True
+        )
+        if row:
+            return row
+
+        # Memory fallback
+        payload = {
+            "topic_id": topic_id,
+            "outline_json": outline_json,
+            "updated_at": "NOW()"
+        }
+        self._memory["topic_outlines"] = [o for o in self._memory["topic_outlines"] if o["topic_id"] != topic_id]
+        self._memory["topic_outlines"].append(payload)
+        return payload
+
+    def fetch_articles_by_topic(self, topic_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Fetch top articles associated with a topic cluster for content context."""
+        sql = """
+            SELECT a.id, a.url, a.title, a.content, a.word_count, at.relevance_score
+            FROM articles a
+            JOIN article_topics at ON a.id = at.article_id
+            WHERE at.topic_id = %s
+            ORDER BY at.relevance_score DESC
+            LIMIT %s;
+        """
+        rows = self.query(sql, (topic_id, limit))
+        return rows if rows else []
 
         existing = next(
             (
