@@ -1,8 +1,19 @@
+'use client';
+
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CoverageMatrix from '@/components/CoverageMatrix';
 
-export default function CoverageMatrixPage() {
+function CoverageMatrixContent() {
   const searchParams = useSearchParams();
   const topicId = searchParams.get('topic_id');
   return <CoverageMatrix topicId={topicId} />;
+}
+
+export default function CoverageMatrixPage() {
+  return (
+    <Suspense fallback={<div className="animate-pulse p-8 text-slate-500">Loading Coverage Analysis...</div>}>
+      <CoverageMatrixContent />
+    </Suspense>
+  );
 }

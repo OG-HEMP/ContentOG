@@ -45,6 +45,10 @@ Before any production deployment:
 1. **Sync Environments**: Ensure `.env` variables match the production environment.
 2. **Connectivity Check**: Run `python scripts/bootstrap_project.py` to verify database status.
 3. **Pipeline Dry-Run**: Run `python scripts/run_pipeline.py` with a small limit to ensure no logic regressions.
+4. **Next.js Hydration & Build Safety**: Verify that any page using **dynamic Client Hooks** (e.g., `useSearchParams`, `usePathname`, `useRouter`) or **browser-only APIs**:
+    - Includes `'use client'` Directive at the top.
+    - Is wrapped in a `<Suspense>` boundary to allow static pre-rendering of the layout.
+    - Does not access `window` or `document` during the initial server-side render.
 
 ### Rule 3: Post-Deployment Verification
 - Check Cloud Run logs for startup errors.

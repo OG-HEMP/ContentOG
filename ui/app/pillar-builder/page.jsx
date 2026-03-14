@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useRun } from '@/components/RunContext';
 import { useApiData } from '@/hooks/useApiData';
 
-export default function PillarBuilderPage() {
+function PillarBuilderContent() {
   const { runId } = useRun();
   const searchParams = useSearchParams();
   const topicIdFromUrl = searchParams.get('topic_id');
@@ -119,5 +119,13 @@ export default function PillarBuilderPage() {
         )}
       </div>
     </section>
+  );
+}
+
+export default function PillarBuilderPage() {
+  return (
+    <Suspense fallback={<div className="animate-pulse p-8 text-slate-500">Loading Strategic Pillars...</div>}>
+      <PillarBuilderContent />
+    </Suspense>
   );
 }
