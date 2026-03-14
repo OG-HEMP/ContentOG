@@ -371,7 +371,7 @@ async def create_outline(topic_id: str):
 
     # 2. Fetch Topic Details
     topic_data = db_client._execute(
-        "SELECT title, description FROM pillar_strategies WHERE topic_id = %s",
+        "SELECT main_topic as title, strategy_details as description FROM pillar_strategies WHERE topic_id = %s",
         (topic_id,),
         fetchone=True
     )
@@ -383,7 +383,13 @@ async def create_outline(topic_id: str):
         )
         if not topic_data:
             raise HTTPException(status_code=404, detail="Topic cluster not found")
+        # Ensure description is present as a string for the prompt
         topic_data["description"] = "Pillar content strategy"
+    else:
+        # If strategy_details is JSONB, convert it to a readable string context
+        if isinstance(topic_data.get("description"), dict):
+            details = topic_data["description"]
+            topic_data["description"] = f"Angle: {details.get('angle', '')}. Value Prop: {details.get('value_proposition', '')}"
 
     # 3. Fetch Articles for Context
     articles = db_client.fetch_articles_by_topic(topic_id, limit=5)
